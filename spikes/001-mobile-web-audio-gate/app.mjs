@@ -102,7 +102,7 @@ export function buttonModel(state) {
 
 const VIEW_COPY = Object.freeze({
   loading: ['Loading test audio…', 'Wait for the controlled test track to load.', null, null],
-  ready: ['Ready', 'Use headphones if safe, then press Run once.', null, null],
+  ready: ['Ready', 'Set media volume before Run. Keep this page foregrounded. Listen without watching; record what you heard before opening diagnostics.', null, null],
   starting: ['Starting audio…', 'Keep this page visible while audio starts.', null, null],
   running: ['Running', 'Listen for one continuous percussion-to-track handoff.', null, null],
   stopping: ['Stopping…', 'Audio ownership is being released.', null, null],
@@ -123,6 +123,7 @@ export function viewModelForState(model) {
     result: isError ? model.errorCode ?? 'unknown-error' : fixedResult,
     recovery,
     isError,
+    statusLive: RUN_STATES.has(model.state) ? 'off' : 'polite',
     ...buttons,
   };
 }
@@ -409,7 +410,7 @@ function diagnosticPairs({ model, identity, terminal, context, buildCommit, brow
   ];
 }
 
-function renderBrowser(documentRef, model, diagnostics) {
+function renderBrowser(documentRef, model, diagnostics, focusState) {
   const view = viewModelForState(model);
   const status = documentRef.getElementById('status');
   const instruction = documentRef.getElementById('instruction');
@@ -418,8 +419,10 @@ function renderBrowser(documentRef, model, diagnostics) {
   const primary = documentRef.getElementById('primary-action');
   const stop = documentRef.getElementById('stop-action');
   const list = documentRef.getElementById('diagnostics-list');
+  const focusedBefore = documentRef.activeElement;
 
   status.textContent = view.status;
+  status.setAttribute('aria-live', view.statusLive);
   instruction.textContent = view.instruction;
   result.textContent = view.result ?? '';
   result.hidden = view.result === null;
@@ -429,6 +432,14 @@ function renderBrowser(documentRef, model, diagnostics) {
   primary.disabled = view.primaryDisabled;
   stop.disabled = view.stopDisabled;
   stop.hidden = view.stopHidden;
+  if (model.state === 'starting' && focusedBefore === primary) {
+    stop.focus();
+  } else if (model.state === 'stopping' && focusedBefore === stop) {
+    focusState.pendingTerminalFocus = true;
+  } else if (TERMINAL_STATES.has(model.state)) {
+    if (focusedBefore === stop || focusState.pendingTerminalFocus) primary.focus();
+    focusState.pendingTerminalFocus = false;
+  }
   if (view.isError) result.setAttribute('role', 'alert');
   else result.removeAttribute('role');
 
@@ -458,13 +469,14 @@ export async function initializeBrowserGate({
   let identity = null;
   let terminal = null;
   let controller = null;
+  const focusState = { pendingTerminalFocus: false };
   const htmlBuildCommit = documentRef.querySelector('meta[name="build-commit"]')?.content ?? 'missing';
   const buildCommit = APP_BUILD_COMMIT;
   const sessionStartedAt = new Date().toISOString();
   let context = null;
   const render = () => renderBrowser(documentRef, model, diagnosticPairs({
     model, identity, terminal, context, buildCommit, browserIdentity, sessionStartedAt,
-  }));
+  }), focusState);
   const setModel = (next) => {
     model = next;
     render();
@@ -490,7 +502,7 @@ export async function initializeBrowserGate({
     model = reduceUi(model, { type: 'load-failed', errorCode: 'decode-failed' });
     renderBrowser(documentRef, model, diagnosticPairs({
       model, identity, terminal, context: null, buildCommit, browserIdentity, sessionStartedAt,
-    }));
+    }), focusState);
     bindReloadRecovery();
     return { getModel: () => model, context: null, controller: null };
   }

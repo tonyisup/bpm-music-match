@@ -329,26 +329,31 @@ test('foreground interruption is immediate while manual running Stop ramps', asy
 test('view model gives every state truthful phase-neutral copy and recovery', async () => {
   const { viewModelForState } = await loadApp();
   const expectations = {
-    loading: ['Loading test audio…', 'Loading…', null],
-    ready: ['Ready', 'Run', null],
-    starting: ['Starting audio…', 'Starting…', null],
-    running: ['Running', 'Running', null],
-    stopping: ['Stopping…', 'Stopping…', null],
-    stopped: ['Stopped', 'Reload', 'Reload this page for another attempt.'],
-    interrupted: ['Test interrupted', 'Reload', 'Reload this page for another attempt.'],
-    complete: ['Complete', 'Reload', 'Reload this page for another attempt.'],
-    'load-error': ['Audio unavailable', 'Reload', 'Check the connection, then reload this page.'],
-    'runtime-error': ["Couldn't continue audio", 'Reload', 'Reload this page for another attempt.'],
+    loading: ['Loading test audio…', 'Loading…', null, 'polite'],
+    ready: ['Ready', 'Run', null, 'polite'],
+    starting: ['Starting audio…', 'Starting…', null, 'off'],
+    running: ['Running', 'Running', null, 'off'],
+    stopping: ['Stopping…', 'Stopping…', null, 'off'],
+    stopped: ['Stopped', 'Reload', 'Reload this page for another attempt.', 'polite'],
+    interrupted: ['Test interrupted', 'Reload', 'Reload this page for another attempt.', 'polite'],
+    complete: ['Complete', 'Reload', 'Reload this page for another attempt.', 'polite'],
+    'load-error': ['Audio unavailable', 'Reload', 'Check the connection, then reload this page.', 'polite'],
+    'runtime-error': ["Couldn't continue audio", 'Reload', 'Reload this page for another attempt.', 'polite'],
   };
 
-  for (const [state, [status, primaryLabel, recovery]] of Object.entries(expectations)) {
+  for (const [state, [status, primaryLabel, recovery, statusLive]] of Object.entries(expectations)) {
     const view = viewModelForState({ state, errorCode: state.includes('error') ? 'typed-error' : null });
     assert.equal(view.status, status, state);
     assert.equal(view.primaryLabel, primaryLabel, state);
     assert.equal(view.recovery, recovery, state);
+    assert.equal(view.statusLive, statusLive, state);
     assert.equal(view.isError, state.includes('error'), state);
     assert.ok(!/beat|crossfade|second|countdown/i.test(JSON.stringify(view)), state);
   }
+  assert.equal(
+    viewModelForState({ state: 'ready', errorCode: null }).instruction,
+    'Set media volume before Run. Keep this page foregrounded. Listen without watching; record what you heard before opening diagnostics.',
+  );
 });
 
 class FakeElement {
@@ -360,17 +365,21 @@ class FakeElement {
     this.attributes = new Map();
     this.listeners = new Map();
     this.children = [];
+    this.ownerDocument = null;
+    this.focusCalls = 0;
   }
   addEventListener(type, listener) { this.listeners.set(type, listener); }
   dispatch(type) { return this.listeners.get(type)?.(); }
   setAttribute(name, value) { this.attributes.set(name, value); }
   removeAttribute(name) { this.attributes.delete(name); }
   replaceChildren(...children) { this.children = children; }
+  focus() { this.focusCalls += 1; this.ownerDocument.activeElement = this; }
 }
 
 class FakeDocument {
   constructor() {
     this.hidden = false;
+    this.activeElement = null;
     this.listeners = new Map();
     this.elements = new Map([
       ['status', new FakeElement()], ['instruction', new FakeElement()],
@@ -378,6 +387,7 @@ class FakeDocument {
       ['primary-action', new FakeElement()], ['stop-action', new FakeElement()],
       ['diagnostics-list', new FakeElement()],
     ]);
+    for (const element of this.elements.values()) element.ownerDocument = this;
     this.commitMeta = new FakeElement({ content: '__BUILD_COMMIT__' });
   }
   getElementById(id) { return this.elements.get(id); }
@@ -422,17 +432,37 @@ test('browser initialization owns one context and reaches reload-only interrupti
   assert.equal(contextCount, 1);
   assert.equal(gate.getModel().state, 'ready');
   assert.equal(documentRef.getElementById('status').textContent, 'Ready');
+  assert.equal(documentRef.getElementById('status').attributes.get('aria-live'), 'polite');
+  assert.equal(
+    documentRef.getElementById('instruction').textContent,
+    'Set media volume before Run. Keep this page foregrounded. Listen without watching; record what you heard before opening diagnostics.',
+  );
   assert.ok(documentRef.getElementById('diagnostics-list').children.some((child) => child.textContent === 'build commit'));
 
-  await documentRef.getElementById('primary-action').dispatch('click');
+  const primary = documentRef.getElementById('primary-action');
+  const stop = documentRef.getElementById('stop-action');
+  primary.focus();
+  const runPromise = primary.dispatch('click');
+  assert.equal(gate.getModel().state, 'starting');
+  assert.equal(documentRef.activeElement, stop);
+  assert.equal(documentRef.getElementById('status').attributes.get('aria-live'), 'off');
+  await runPromise;
   assert.equal(gate.getModel().state, 'running');
   assert.equal(documentRef.getElementById('status').textContent, 'Running');
+  assert.equal(documentRef.activeElement, stop);
+  assert.equal(documentRef.getElementById('status').attributes.get('aria-live'), 'off');
 
   documentRef.hidden = true;
-  await documentRef.dispatch('visibilitychange');
+  const interruptPromise = documentRef.dispatch('visibilitychange');
+  assert.equal(gate.getModel().state, 'stopping');
+  assert.equal(documentRef.activeElement, stop);
+  assert.equal(documentRef.getElementById('status').attributes.get('aria-live'), 'off');
+  await interruptPromise;
   assert.equal(gate.getModel().state, 'interrupted');
-  assert.equal(documentRef.getElementById('primary-action').textContent, 'Reload');
-  documentRef.getElementById('primary-action').dispatch('click');
+  assert.equal(primary.textContent, 'Reload');
+  assert.equal(documentRef.activeElement, primary);
+  assert.equal(documentRef.getElementById('status').attributes.get('aria-live'), 'polite');
+  primary.dispatch('click');
   assert.equal(reloadCount, 1);
 });
 

@@ -4,9 +4,11 @@ Do not fill this worksheet from memory. Capture identity before trials and termi
 
 ## Build and environment
 
-- Exact Android device model:
-- Android version:
-- Chrome version:
+- Exact Android device model: Pixel 8 Pro
+- Android version: Android 16
+- Android build: `CP1A.260505.005`
+- Kernel: `6.1.145-android14-11-gfa1d6308d1fe-ab14691759` (`#1 Fri Jan 9 16:33:46 UTC 2026`)
+- Chrome version: `150.0.7871.181`
 - Commit SHA:
 - Workflow URL:
 - Served HTTPS URL:
