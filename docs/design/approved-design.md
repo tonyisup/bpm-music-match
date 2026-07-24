@@ -8,6 +8,8 @@ Approved by Tony on 2026-07-24
 Mode: Builder
 Review: Three adversarial review rounds completed; final findings addressed and retained as implementation verification gates
 
+> **Milestone 1 mechanics supersession (2026-07-24):** This document remains authoritative for product intent. The reviewed plan at `docs/plans/2026-07-24-milestone-1-mobile-audio-gate.md` supersedes Gate 1 lifecycle/recovery details that say interruption returns to `ready` or permits same-session restart. For experimental integrity, every Gate 1 run is terminal and recovery is **Reload page**. This note does not change the Milestone 2 product interaction.
+
 ## Problem Statement
 
 During workouts, movement cadence changes between running, squats, jump rope, and other exercises. Existing workout-music tools tend to assume a steady running pace, automatic sensor input, or a browse-first music flow.
