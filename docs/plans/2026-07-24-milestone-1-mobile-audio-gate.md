@@ -331,7 +331,7 @@ Runtime contract:
 1. Before enabling Run, apply one 15-second overall load deadline to metadata fetch, WAV fetch, digest, and decode.
    - Fetch and schema-validate `./asset-metadata.json` and `./calibration.json`.
    - Fetch `./assets/gate-track.wav` as bytes, compute SHA-256 with `crypto.subtle.digest`, and compare it with immutable metadata before decoding those exact bytes.
-   - Validate decoded sample rate, channels, duration, and the annotated entry/tail bounds.
+   - Validate decoded channels and duration plus the annotated entry/tail bounds. Web Audio may resample the decoded buffer to the one owning device context (for example, 48 kHz on Android), so validate decoded sample rate against `AudioContext.sampleRate`; the committed WAV and clean-room generator remain byte-verified at 44.1 kHz.
    - Invalidate the load generation on timeout/error so late fetch, digest, or decode completion cannot reach `ready`.
    - Any load error replaces the primary slot with “Reload page.”
 2. Create exactly one `AudioContext` and one master output graph.
@@ -403,16 +403,18 @@ Required error codes:
 - `asset-fetch-failed`
 - `metadata-invalid`
 - `asset-integrity-failed`
+- `module-identity-failed`
 - `load-timeout`
 - `decode-failed`
 - `resume-failed`
 - `startup-timeout`
 - `schedule-failed`
+- `context-close-failed`
 - `interrupted`
 
 Every error shows cause plus one recovery action. Do not print local paths or audio bytes.
 
-Recovery mapping is deterministic: `asset-fetch-failed`, `metadata-invalid`, `asset-integrity-failed`, `load-timeout`, `decode-failed`, `resume-failed`, `startup-timeout`, `schedule-failed`, and `interrupted` all disable Run and offer exactly one primary action: **Reload page**. Manual Stop is the non-error reason `manual-stop`, not `interrupted`.
+Recovery mapping is deterministic: `asset-fetch-failed`, `metadata-invalid`, `asset-integrity-failed`, `module-identity-failed`, `load-timeout`, `decode-failed`, `resume-failed`, `startup-timeout`, `schedule-failed`, `context-close-failed`, and `interrupted` all disable Run and offer exactly one primary action: **Reload page**. A close failure does not overwrite an earlier accepted visible cause, but terminal Diagnostics retain `context-close-failed` and the trial fails teardown acceptance. Manual Stop is the non-error reason `manual-stop`, not `interrupted`.
 
 ### Task A4: Deploy the exact commit to GitHub Pages
 

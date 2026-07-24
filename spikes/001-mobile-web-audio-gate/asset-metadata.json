@@ -1,0 +1,558 @@
+{
+  "bpm": 120,
+  "channels": 2,
+  "durationSeconds": 16,
+  "events": [
+    {
+      "sample": 0,
+      "voice": "hat"
+    },
+    {
+      "sample": 0,
+      "voice": "kick"
+    },
+    {
+      "sample": 0,
+      "voice": "bass"
+    },
+    {
+      "sample": 0,
+      "voice": "chord"
+    },
+    {
+      "sample": 11025,
+      "voice": "hat"
+    },
+    {
+      "sample": 22050,
+      "voice": "hat"
+    },
+    {
+      "sample": 22050,
+      "voice": "kick"
+    },
+    {
+      "sample": 22050,
+      "voice": "bass"
+    },
+    {
+      "sample": 33075,
+      "voice": "hat"
+    },
+    {
+      "sample": 44100,
+      "voice": "hat"
+    },
+    {
+      "sample": 44100,
+      "voice": "kick"
+    },
+    {
+      "sample": 44100,
+      "voice": "bass"
+    },
+    {
+      "sample": 55125,
+      "voice": "hat"
+    },
+    {
+      "sample": 66150,
+      "voice": "hat"
+    },
+    {
+      "sample": 66150,
+      "voice": "kick"
+    },
+    {
+      "sample": 66150,
+      "voice": "bass"
+    },
+    {
+      "sample": 77175,
+      "voice": "hat"
+    },
+    {
+      "sample": 88200,
+      "voice": "hat"
+    },
+    {
+      "sample": 88200,
+      "voice": "kick-strong"
+    },
+    {
+      "sample": 88200,
+      "voice": "bass-strong"
+    },
+    {
+      "sample": 88200,
+      "voice": "chord-strong"
+    },
+    {
+      "sample": 99225,
+      "voice": "hat"
+    },
+    {
+      "sample": 110250,
+      "voice": "hat"
+    },
+    {
+      "sample": 110250,
+      "voice": "kick"
+    },
+    {
+      "sample": 110250,
+      "voice": "bass"
+    },
+    {
+      "sample": 121275,
+      "voice": "hat"
+    },
+    {
+      "sample": 132300,
+      "voice": "hat"
+    },
+    {
+      "sample": 132300,
+      "voice": "kick"
+    },
+    {
+      "sample": 132300,
+      "voice": "bass"
+    },
+    {
+      "sample": 143325,
+      "voice": "hat"
+    },
+    {
+      "sample": 154350,
+      "voice": "hat"
+    },
+    {
+      "sample": 154350,
+      "voice": "kick"
+    },
+    {
+      "sample": 154350,
+      "voice": "bass"
+    },
+    {
+      "sample": 165375,
+      "voice": "hat"
+    },
+    {
+      "sample": 176400,
+      "voice": "hat"
+    },
+    {
+      "sample": 176400,
+      "voice": "kick"
+    },
+    {
+      "sample": 176400,
+      "voice": "bass"
+    },
+    {
+      "sample": 176400,
+      "voice": "chord"
+    },
+    {
+      "sample": 187425,
+      "voice": "hat"
+    },
+    {
+      "sample": 198450,
+      "voice": "hat"
+    },
+    {
+      "sample": 198450,
+      "voice": "kick"
+    },
+    {
+      "sample": 198450,
+      "voice": "bass"
+    },
+    {
+      "sample": 209475,
+      "voice": "hat"
+    },
+    {
+      "sample": 220500,
+      "voice": "hat"
+    },
+    {
+      "sample": 220500,
+      "voice": "kick"
+    },
+    {
+      "sample": 220500,
+      "voice": "bass"
+    },
+    {
+      "sample": 231525,
+      "voice": "hat"
+    },
+    {
+      "sample": 242550,
+      "voice": "hat"
+    },
+    {
+      "sample": 242550,
+      "voice": "kick"
+    },
+    {
+      "sample": 242550,
+      "voice": "bass"
+    },
+    {
+      "sample": 253575,
+      "voice": "hat"
+    },
+    {
+      "sample": 264600,
+      "voice": "hat"
+    },
+    {
+      "sample": 264600,
+      "voice": "kick"
+    },
+    {
+      "sample": 264600,
+      "voice": "bass"
+    },
+    {
+      "sample": 264600,
+      "voice": "chord"
+    },
+    {
+      "sample": 275625,
+      "voice": "hat"
+    },
+    {
+      "sample": 286650,
+      "voice": "hat"
+    },
+    {
+      "sample": 286650,
+      "voice": "kick"
+    },
+    {
+      "sample": 286650,
+      "voice": "bass"
+    },
+    {
+      "sample": 297675,
+      "voice": "hat"
+    },
+    {
+      "sample": 308700,
+      "voice": "hat"
+    },
+    {
+      "sample": 308700,
+      "voice": "kick"
+    },
+    {
+      "sample": 308700,
+      "voice": "bass"
+    },
+    {
+      "sample": 319725,
+      "voice": "hat"
+    },
+    {
+      "sample": 330750,
+      "voice": "hat"
+    },
+    {
+      "sample": 330750,
+      "voice": "kick"
+    },
+    {
+      "sample": 330750,
+      "voice": "bass"
+    },
+    {
+      "sample": 341775,
+      "voice": "hat"
+    },
+    {
+      "sample": 352800,
+      "voice": "hat"
+    },
+    {
+      "sample": 352800,
+      "voice": "kick"
+    },
+    {
+      "sample": 352800,
+      "voice": "bass"
+    },
+    {
+      "sample": 352800,
+      "voice": "chord"
+    },
+    {
+      "sample": 363825,
+      "voice": "hat"
+    },
+    {
+      "sample": 374850,
+      "voice": "hat"
+    },
+    {
+      "sample": 374850,
+      "voice": "kick"
+    },
+    {
+      "sample": 374850,
+      "voice": "bass"
+    },
+    {
+      "sample": 385875,
+      "voice": "hat"
+    },
+    {
+      "sample": 396900,
+      "voice": "hat"
+    },
+    {
+      "sample": 396900,
+      "voice": "kick"
+    },
+    {
+      "sample": 396900,
+      "voice": "bass"
+    },
+    {
+      "sample": 407925,
+      "voice": "hat"
+    },
+    {
+      "sample": 418950,
+      "voice": "hat"
+    },
+    {
+      "sample": 418950,
+      "voice": "kick"
+    },
+    {
+      "sample": 418950,
+      "voice": "bass"
+    },
+    {
+      "sample": 429975,
+      "voice": "hat"
+    },
+    {
+      "sample": 441000,
+      "voice": "hat"
+    },
+    {
+      "sample": 441000,
+      "voice": "kick"
+    },
+    {
+      "sample": 441000,
+      "voice": "bass"
+    },
+    {
+      "sample": 441000,
+      "voice": "chord"
+    },
+    {
+      "sample": 452025,
+      "voice": "hat"
+    },
+    {
+      "sample": 463050,
+      "voice": "hat"
+    },
+    {
+      "sample": 463050,
+      "voice": "kick"
+    },
+    {
+      "sample": 463050,
+      "voice": "bass"
+    },
+    {
+      "sample": 474075,
+      "voice": "hat"
+    },
+    {
+      "sample": 485100,
+      "voice": "hat"
+    },
+    {
+      "sample": 485100,
+      "voice": "kick"
+    },
+    {
+      "sample": 485100,
+      "voice": "bass"
+    },
+    {
+      "sample": 496125,
+      "voice": "hat"
+    },
+    {
+      "sample": 507150,
+      "voice": "hat"
+    },
+    {
+      "sample": 507150,
+      "voice": "kick"
+    },
+    {
+      "sample": 507150,
+      "voice": "bass"
+    },
+    {
+      "sample": 518175,
+      "voice": "hat"
+    },
+    {
+      "sample": 529200,
+      "voice": "hat"
+    },
+    {
+      "sample": 529200,
+      "voice": "kick"
+    },
+    {
+      "sample": 529200,
+      "voice": "bass"
+    },
+    {
+      "sample": 529200,
+      "voice": "chord"
+    },
+    {
+      "sample": 540225,
+      "voice": "hat"
+    },
+    {
+      "sample": 551250,
+      "voice": "hat"
+    },
+    {
+      "sample": 551250,
+      "voice": "kick"
+    },
+    {
+      "sample": 551250,
+      "voice": "bass"
+    },
+    {
+      "sample": 562275,
+      "voice": "hat"
+    },
+    {
+      "sample": 573300,
+      "voice": "hat"
+    },
+    {
+      "sample": 573300,
+      "voice": "kick"
+    },
+    {
+      "sample": 573300,
+      "voice": "bass"
+    },
+    {
+      "sample": 584325,
+      "voice": "hat"
+    },
+    {
+      "sample": 595350,
+      "voice": "hat"
+    },
+    {
+      "sample": 595350,
+      "voice": "kick"
+    },
+    {
+      "sample": 595350,
+      "voice": "bass"
+    },
+    {
+      "sample": 606375,
+      "voice": "hat"
+    },
+    {
+      "sample": 617400,
+      "voice": "hat"
+    },
+    {
+      "sample": 617400,
+      "voice": "kick"
+    },
+    {
+      "sample": 617400,
+      "voice": "bass"
+    },
+    {
+      "sample": 617400,
+      "voice": "chord"
+    },
+    {
+      "sample": 628425,
+      "voice": "hat"
+    },
+    {
+      "sample": 639450,
+      "voice": "hat"
+    },
+    {
+      "sample": 639450,
+      "voice": "kick"
+    },
+    {
+      "sample": 639450,
+      "voice": "bass"
+    },
+    {
+      "sample": 650475,
+      "voice": "hat"
+    },
+    {
+      "sample": 661500,
+      "voice": "hat"
+    },
+    {
+      "sample": 661500,
+      "voice": "kick"
+    },
+    {
+      "sample": 661500,
+      "voice": "bass"
+    },
+    {
+      "sample": 672525,
+      "voice": "hat"
+    },
+    {
+      "sample": 683550,
+      "voice": "hat"
+    },
+    {
+      "sample": 683550,
+      "voice": "kick"
+    },
+    {
+      "sample": 683550,
+      "voice": "bass"
+    },
+    {
+      "sample": 694575,
+      "voice": "hat"
+    }
+  ],
+  "generator": "scripts/generate_gate_track.py",
+  "id": "gate-track-v1",
+  "postCrossfadeTailSeconds": 2.0,
+  "sampleRate": 44100,
+  "sha256": "d8be8fdd4f5f1d3222c5df86f15fb509d1844c40b40450fc738f2bef812d0033",
+  "subdivisionSamples": 11025,
+  "targetEntryDownbeatSeconds": 2.0
+}

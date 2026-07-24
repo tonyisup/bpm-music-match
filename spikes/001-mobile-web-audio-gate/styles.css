@@ -1,0 +1,169 @@
+:root {
+  color-scheme: light dark;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  line-height: 1.5;
+  color: #171715;
+  background: #f2f0e9;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-width: 20rem;
+  min-height: 100svh;
+  padding: calc(1rem + env(safe-area-inset-top)) 1rem calc(1rem + env(safe-area-inset-bottom));
+}
+
+main {
+  width: 100%;
+  max-width: 36rem;
+  margin: 0 auto;
+  padding: 1.25rem;
+  border: 2px solid currentColor;
+  background: #fffdf6;
+}
+
+header {
+  border-bottom: 2px solid currentColor;
+  margin-bottom: 1.5rem;
+}
+
+.eyebrow {
+  margin: 0;
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+h1 {
+  margin: 0.3rem 0 1rem;
+  font-family: system-ui, sans-serif;
+  font-size: clamp(1.7rem, 7vw, 2.5rem);
+  line-height: 1.05;
+}
+
+.status-panel {
+  min-height: 10rem;
+}
+
+.status {
+  margin: 0;
+  font: 700 1.25rem/1.2 system-ui, sans-serif;
+}
+
+#instruction,
+.result,
+.recovery {
+  overflow-wrap: anywhere;
+}
+
+.result,
+.recovery {
+  border-left: 0.3rem solid currentColor;
+  padding-left: 0.75rem;
+}
+
+.controls {
+  display: grid;
+  gap: 0.75rem;
+  grid-template-columns: 1fr 1fr;
+  margin: 1.5rem 0;
+}
+
+button,
+summary {
+  min-height: 56px;
+  min-width: 48px;
+  font: 700 1rem/1 system-ui, sans-serif;
+}
+
+button {
+  border: 2px solid currentColor;
+  border-radius: 0;
+  padding: 0.75rem 1rem;
+  color: #fff;
+  background: #171715;
+}
+
+button:disabled {
+  color: #575750;
+  background: #d8d6cf;
+  border-color: #77776f;
+}
+
+button:not(:disabled):active {
+  transform: translateY(1px);
+}
+
+button:focus-visible,
+summary:focus-visible {
+  outline: 3px solid #006be6;
+  outline-offset: 3px;
+}
+
+summary {
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+  border-top: 2px solid currentColor;
+}
+
+#diagnostics-body {
+  overflow-x: auto;
+  font-size: 0.78rem;
+}
+
+dt {
+  margin-top: 0.5rem;
+  font-weight: 700;
+}
+
+dd {
+  margin-left: 0;
+  overflow-wrap: anywhere;
+}
+
+[hidden] {
+  display: none !important;
+}
+
+@media (max-width: 25rem) {
+  main {
+    padding: 1rem;
+  }
+
+  .controls {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    color: #f1f0e9;
+    background: #11110f;
+  }
+
+  main {
+    background: #1b1b18;
+  }
+
+  button {
+    color: #171715;
+    background: #f1f0e9;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+  }
+}

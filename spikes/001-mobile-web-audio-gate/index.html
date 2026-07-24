@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="build-commit" content="__BUILD_COMMIT__">
+  <title>Android audio gate</title>
+  <link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+  <main>
+    <header>
+      <p class="eyebrow">Disposable feasibility test</p>
+      <h1>Android audio gate</h1>
+    </header>
+
+    <section class="status-panel" aria-labelledby="status">
+      <p id="status" class="status" aria-live="polite">Loading test audio…</p>
+      <p id="instruction">Wait for the controlled test track to load.</p>
+      <p id="result" class="result" hidden></p>
+      <p id="recovery" class="recovery" hidden></p>
+    </section>
+
+    <div class="controls" aria-label="Audio test controls">
+      <button id="primary-action" type="button" disabled>Loading…</button>
+      <button id="stop-action" type="button" disabled>Stop</button>
+    </div>
+
+    <details id="diagnostics">
+      <summary>Diagnostics</summary>
+      <div id="diagnostics-body" aria-live="off">
+        <dl id="diagnostics-list"></dl>
+      </div>
+    </details>
+  </main>
+
+  <script type="module">
+    import { main } from './app.mjs';
+    main();
+  </script>
+</body>
+</html>
