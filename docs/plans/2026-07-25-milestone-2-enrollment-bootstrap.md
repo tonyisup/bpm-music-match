@@ -41,10 +41,17 @@ Forbidden:
 
 **Objective:** Implement deterministic limits, timing checks, cue-energy math, sanitized identity construction, and lifecycle-counter evaluation.
 
+**Architecture:** Split the pure contracts by responsibility: measurements own bounded byte/decode/timing/cue math, reports own the closed schema and serialization, and lifecycle owns opaque application-memory evidence. `enrollment-core.mjs` remains only a seven-name legacy compatibility facade; new browser code imports `createApplicationMemoryEvidence` directly from the lifecycle module. The internal frozen measurement-limit object used for report cross-field validation is not re-exported there.
+
 **Files:**
 
 - Create: `tools/m2-enrollment/enrollment-core.mjs`
-- Create: `tools/m2-enrollment/tests/enrollment-core.test.mjs`
+- Create: `tools/m2-enrollment/enrollment-measurements.mjs`
+- Create: `tools/m2-enrollment/enrollment-report.mjs`
+- Create: `tools/m2-enrollment/enrollment-lifecycle.mjs`
+- Create: `tools/m2-enrollment/tests/enrollment-measurements.test.mjs`
+- Create: `tools/m2-enrollment/tests/enrollment-report.test.mjs`
+- Create: `tools/m2-enrollment/tests/enrollment-lifecycle.test.mjs`
 
 **RED:** Tests define:
 
@@ -53,16 +60,23 @@ Forbidden:
 - `targetEntryDownbeatSeconds >= 4 * (60 / BPM)`;
 - target downbeat plus three beat durations plus two seconds fits within decoded duration;
 - 50 ms cue RMS/peak thresholds (`0.010`, `0.050`);
-- report key allowlist excludes filename/path/URI/bytes/samples;
-- application cleanup requires exactly two matching lowercase-64-hex-SHA unloads, successful context closes, all owned references/counters at zero, and `browserHeapObserved: false`.
+- report constructor accepts separated `trustedConfig`, `observedAssetFacts`, and curated downbeat inputs; it validates a closed config shape and constructs every output string/fixed policy value from that object, while Task 3 integration tests must prove the object came directly from static config and that file-derived input reaches only configured extension/MIME equality checks, SHA, and bounded numeric facts;
+- static policy is exact: schema `1`, `.mp3`/`audio/mpeg`, duration tolerance `0.050`, 4/4, four lead-in beats, two-second tail, gains `0.25/0.50/0.70`, BPM window `3.0`, outlier fraction `0.20`, CV `0.05`, reconciliation `60 ms`, beat-4/5/8 crossfade, 128 samples, and versioned formula/curve IDs;
+- report key allowlist excludes filename/path/URI/bytes/samples and rejects all observed extra strings or nested values;
+- report serialization accepts only reports branded by the constructor, reconstructs the exact export DTO with null prototypes, and uses the serializer captured when the report module evaluated, so later ordinary same-realm prototype pollution or `JSON.stringify` replacement cannot add file-derived fields;
+- application cleanup requires exactly two matching lowercase-64-hex-SHA unloads, successful context closes, all owned references/counters at zero, and `browserHeapObserved: false`; the lifecycle factory snapshots approved direct data properties into private `WeakMap` state and the evaluator accepts only its opaque branded evidence;
+- decoded metadata observation consistency is one sample frame (plus floating-point noise), distinct from the enrolled `0.050`-second runtime identity tolerance;
+- threat boundary: the selected file supplies bytes to browser hashing/decoding and bounded scalar observations to these pure contracts, never executable object graphs. This does not claim protection from a malicious extension or other code that compromised the same realm before the modules evaluated.
 
 Run and expect failure because the module is absent:
 
 ```bash
-node --test tools/m2-enrollment/tests/enrollment-core.test.mjs
+node --test tools/m2-enrollment/tests/enrollment-measurements.test.mjs
+node --test tools/m2-enrollment/tests/enrollment-report.test.mjs
+node --test tools/m2-enrollment/tests/enrollment-lifecycle.test.mjs
 ```
 
-**GREEN:** Add only the pure exported helpers required by the tests, then rerun the focused test.
+**GREEN:** Add only the pure exported helpers required by the tests, preserve the compatibility facade's exact public names and function identities, then rerun every focused split test.
 
 ## Task 2: Browser analysis and teardown boundary
 
@@ -118,14 +132,33 @@ export const ENROLLMENT_CONFIG = Object.freeze({
   schemaVersion: 1,
   assetVersion: 'm2-island-party-v1',
   displayLabel: 'Island Party by NDA',
-  expectedExtension: '.mp3',
-  expectedMimeType: 'audio/mpeg',
-  trackBpmHypothesis: 110,
+  allowedExtension: '.mp3',
+  allowedMimeType: 'audio/mpeg',
+  decodedDurationToleranceSeconds: 0.050,
+  configVersion: 'm2-config-v1',
+  trackBpm: 110,
   trackBpmVerified: false,
   beatsPerBar: 4,
+  leadInBeats: 4,
+  minimumPostCrossfadeTailSeconds: 2,
   percussionRecipeId: 'kick-snare-v1',
+  percussionTrimGain: 0.25,
+  trackTrimGain: 0.50,
+  masterGain: 0.70,
+  bpmMatchWindow: 3.0,
+  intervalOutlierFraction: 0.20,
+  stabilityCvLimit: 0.05,
+  reconciliationToleranceMs: 60,
+  silenceTimeoutFormula: 'clamp-1.5x-median-900-1800-v1',
+  crossfadeStartBeat: 4,
+  targetDownbeatBeat: 5,
+  crossfadeEndBeat: 8,
+  crossfadeSampleCount: 128,
+  crossfadeCurveId: 'equal-power-sin-cos-v1',
 });
 ```
+
+The app passes this statically imported object through a narrow assembly function. That function may change only `trackBpmVerified` from `false` to `true` after Tony explicitly confirms the configured BPM; it must reject every other override. No field read from `File` is accepted into the config object.
 
 **RED:** Tests define:
 
@@ -135,7 +168,7 @@ export const ENROLLMENT_CONFIG = Object.freeze({
 - final report remains disabled until two matching-SHA load/unload cycles complete and BPM is explicitly confirmed;
 - mismatch on cycle two resets enrollment instead of merging identities;
 - copy output and a user-gesture `data:application/json` download use a closed recursive report schema;
-- config imports statically from exactly `./enrollment-config.mjs`; no runtime config request exists;
+- config imports statically from exactly `./enrollment-config.mjs`; no runtime config request exists; report assembly proves every string/fixed policy field retains direct static-config identity, permits only the explicit `trackBpmVerified` confirmation transition, and rejects attempts to route `File.name`, `File.type`, paths, URIs, or other file-derived strings through config;
 - meta CSP sets `default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'none'; media-src 'none'; object-src 'none'; worker-src 'none'; form-action 'none'; base-uri 'none'`, and framed execution is rejected as defense in depth;
 - no XHR, WebSocket, EventSource, sendBeacon, storage, service worker, object URL, form submission, media element, or file-derived fetch path exists;
 - filename is never rendered or logged;
