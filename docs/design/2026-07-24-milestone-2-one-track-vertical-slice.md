@@ -104,11 +104,11 @@ picker result
 
 A wrong file is never decoded. Hash plus decode has a 15-second deadline. The fixture selects exactly one extension/MIME pair; Milestone 2 makes no generic compatibility claim.
 
-Hard limits are 20 MiB compressed bytes, 360 seconds decoded duration, one or two decoded channels, decoded sample rate from 8–96 kHz, and calculated decoded PCM no greater than 160 MiB (`duration × sampleRate × channels × 4`). Runtime accepts only the enrolled channel count, sample rate, duration within ±0.050 seconds, and PCM estimate within 1% of enrollment.
+Hard limits are 20 MiB compressed bytes, 360 seconds decoded duration, one or two decoded channels, decoded sample rate from 8–96 kHz, and calculated decoded PCM no greater than 160 MiB. Enrollment records exact decoded PCM as `audioBuffer.length × channels × 4`; `duration × sampleRate × channels × 4` remains a consistency estimate rather than the authority. Runtime accepts only the enrolled channel count, sample rate, duration within ±0.050 seconds, and exact PCM bytes.
 
 Bounded validation checks 4,096 samples per channel at start and end plus the cue-energy window. It never scans the complete track. File path, raw filename, local URI, bytes, and audio content never enter diagnostics or persistent storage. The app uses no IndexedDB, Cache Storage, localStorage, service worker, upload, or remote request for the file. Reload requires selection again.
 
-Run two consecutive cold load/unload cycles on the Pixel before trials and require both to complete within limits without increasing app-reported retained raw buffers, decoded buffers, contexts, or source registries.
+Run two consecutive cold load/unload cycles on the Pixel before trials. Require both to complete within limits, close their contexts successfully, and leave every application-owned raw-buffer, decoded-buffer, context, preview-source, and source-registry reference cleared. This is an application cleanup contract, not proof that Chrome released decoder/native/process memory.
 
 Identity is split into exactly two evidence identities:
 
@@ -126,7 +126,10 @@ assetIdentity (immutable bytes/decode facts)
   decodedChannelCount
   decodedSampleRate
   calculatedDecodedPcmBytes
-  memoryEnvelopeCompliant = true
+  applicationMemoryContractPassed = true
+  ownedReferencesCleared = true
+  contextsCloseSettled = true
+  browserHeapObserved = false
 
 experimentConfigIdentity (all versioned musical/policy choices)
   configVersion
@@ -150,6 +153,8 @@ experimentConfigIdentity (all versioned musical/policy choices)
   crossfadeSampleCount
   crossfadeCurveId
 ```
+
+The four application-memory fields are deliberately narrow. They prove fixed payload bounds and cleanup of references owned by this application. They do not claim browser-heap, decoder-native, or process-memory release because GitHub Pages JavaScript has no reliable cross-browser observation surface for those facts. Any later process-memory claim requires a separately versioned Pixel/DevTools protocol and must remain distinct from `assetIdentity`.
 
 Every trial embeds both identities. Any permitted tuning change—including cue annotation, lead-in, match window, percussion, gain, crossfade duration, or curve—creates a new `configVersion`, a new deployment, and a complete protocol restart. The configured SHA is an identity, not a rights claim; private audio bytes never enter the repository.
 
@@ -756,8 +761,11 @@ Required fixture:
 | `decodedDurationSeconds` | observed duration with ±0.050 s tolerance | awaiting local decode |
 | `decodedChannelCount` | observed integer 1 or 2 | awaiting local decode |
 | `decodedSampleRate` | observed 8–96 kHz | awaiting local decode |
-| `calculatedDecodedPcmBytes` | duration × rate × channels × 4, ≤160 MiB | awaiting local decode |
-| `memoryEnvelopeCompliant` | true after two cold load/unload cycles | awaiting Pixel enrollment |
+| `calculatedDecodedPcmBytes` | exact frames × channels × 4, ≤160 MiB; duration estimate consistent | awaiting local decode |
+| `applicationMemoryContractPassed` | true after exactly two matching cold load/unload cycles | awaiting Pixel enrollment |
+| `ownedReferencesCleared` | all application-owned file/byte/buffer/source/context references cleared | awaiting Pixel enrollment |
+| `contextsCloseSettled` | both owned context closes resolved successfully | awaiting Pixel enrollment |
+| `browserHeapObserved` | `false`; no unsupported heap/process-memory claim | fixed honesty marker |
 | cue energy | 0–50 ms RMS ≥0.010 and peak ≥0.050 | awaiting local validation |
 | `minimumPostCrossfadeTailSeconds` | `2.0` seconds | fixed |
 | `maxCompressedBytes` | `20 MiB` | fixed |
@@ -769,7 +777,7 @@ Required fixture:
 | `masterGain` | `0.70` initial safe hypothesis | fixed until bounded tuning |
 | crossfade/config policy | all fields enumerated in `experimentConfigIdentity` | fixed baseline |
 
-Enrollment order is byte-size → SHA → decode → observed-property checks → cue-energy oracle → unload/reload memory check. It occurs locally without committing, uploading, or redistributing audio. The completed fixture contains identities and timing/numeric facts only.
+Enrollment order is byte-size → SHA → decode → observed-property checks → cue-energy oracle → two-cycle application cleanup check. It occurs locally without committing, uploading, or redistributing audio. The completed fixture contains identities and timing/numeric facts only.
 
 ## Open Questions
 

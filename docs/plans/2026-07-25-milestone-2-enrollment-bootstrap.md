@@ -4,7 +4,7 @@
 
 **Goal:** Add a bounded `/enroll/` GitHub Pages utility that lets Tony select one local MP3 on the Pixel, derives the complete privacy-safe Milestone 2 stimulus fixture in browser memory, and leaves the existing Milestone 1 root artifact unchanged.
 
-**Architecture:** Keep enrollment isolated under `tools/m2-enrollment/`. Pure validation/report helpers receive explicit byte/decode inputs; browser adapters own File API, Web Crypto, and Web Audio. Candidate choices live in a repo-level JSON config. The page fetches only that fixed config before selection; no file-derived value can reach a network, persistence, or logging API. Two explicit select/load/unload cycles must end with all application-owned resource counters at zero before the final report becomes copyable/downloadable.
+**Architecture:** Keep enrollment isolated under `tools/m2-enrollment/`. Pure validation/report helpers receive explicit byte/decode inputs; browser adapters own File API, Web Crypto, and Web Audio. Candidate choices live in a validated static ESM config so the page can enforce `connect-src 'none'`. A tokenized state machine owns one load or preview at a time and discards late async settlements. Two explicit select/load/unload cycles must close their contexts and clear every application-owned reference before the final report becomes copyable/downloadable; the report makes no browser/native heap-release claim.
 
 **Tech Stack:** Native HTML/CSS/ES modules, Web Crypto, raw Web Audio, Node 22 built-in test runner, Python 3.13 static-contract tests, GitHub Pages.
 
@@ -20,7 +20,7 @@ Allowed:
 - local File API byte reads after a hard compressed-size check;
 - SHA-256, full decode, bounded start/end/cue sample inspection, and raw Web Audio preview;
 - sanitized JSON output and explicit user-initiated download;
-- application-owned resource counters for two load/unload cycles.
+- application-owned cleanup facts for two load/unload cycles, explicitly distinguished from browser/process memory.
 
 Forbidden:
 
@@ -33,7 +33,7 @@ Forbidden:
 ## Gates
 
 - **Pre-flight:** exact runtime versions, authenticated GitHub CLI, clean approved-design worktree, and unchanged Gate 1 source hashes.
-- **Revision:** every implementation task must pass spec review and code-quality review; maximum three correction cycles.
+- **Revision:** every implementation task must pass spec review and code-quality review; after three non-converging correction cycles, stop and escalate rather than accepting unresolved findings.
 - **Abort:** any evidence that private file-derived data can reach network/persistence/logging, or that the root artifact changes.
 - **Escalation:** only if the selected MP3 fails fixed memory/decode/cue constraints or Android Chrome exposes behavior not represented by the tested browser boundary.
 
@@ -49,12 +49,12 @@ Forbidden:
 **RED:** Tests define:
 
 - 20 MiB compressed limit before byte reads;
-- duration 0–360 seconds, 1–2 channels, 8–96 kHz sample rate, and PCM ≤160 MiB;
+- duration greater than 0 and at most 360 seconds, 1–2 integer channels, integer 8–96 kHz sample rate, and exact frame-based PCM ≤160 MiB;
 - `targetEntryDownbeatSeconds >= 4 * (60 / BPM)`;
 - target downbeat plus three beat durations plus two seconds fits within decoded duration;
 - 50 ms cue RMS/peak thresholds (`0.010`, `0.050`);
 - report key allowlist excludes filename/path/URI/bytes/samples;
-- final memory compliance requires two completed unloads and all counters at zero.
+- application cleanup requires exactly two matching lowercase-64-hex-SHA unloads, successful context closes, all owned references/counters at zero, and `browserHeapObserved: false`.
 
 Run and expect failure because the module is absent:
 
@@ -78,11 +78,14 @@ node --test tools/m2-enrollment/tests/enrollment-core.test.mjs
 
 - size is rejected before `arrayBuffer()`;
 - lowercase SHA-256 is computed before decode;
-- raw bytes are dereferenced after hash/decode settlement;
-- bounded start/end and cue windows are inspected without full-track iteration;
-- preview uses an owned `AudioBufferSourceNode`, never a media element;
+- exactly one tokenized load is active, with one 15-second aggregate hash/decode deadline;
+- Cancel invalidates the token and blocks replacement until teardown settles; late hash/decode results are discarded and their context is closed;
+- raw bytes are dereferenced after hash/decode settlement and the file input is cleared in a read-stage `finally` on success, cancellation, and failure;
+- bounded start/end and cue windows use `copyFromChannel()` into fixed scratch arrays; no full-channel view/subarray is retained;
+- preview uses one owned, one-shot `AudioBufferSourceNode`, never a media element; each direct Play gesture performs tokenized `resume()`, settles any old source, and derives position from source offset plus context time;
 - object/file URLs are never created;
-- unload stops preview, clears decoded/raw references, closes the context, clears the file input, and returns counters to zero;
+- Unload, `pagehide`, and foreground loss invalidate loads, stop preview, clear references, and initiate context close; close rejection/timeout is reload-only and cannot count as a successful unload;
+- counters decrement only after source/context settlement;
 - thrown errors and result objects never contain the selected filename or bytes.
 
 Run and expect failure because the module is absent:
@@ -102,36 +105,43 @@ node --test tools/m2-enrollment/tests/enrollment-browser.test.mjs
 - Create: `tools/m2-enrollment/index.html`
 - Create: `tools/m2-enrollment/styles.css`
 - Create: `tools/m2-enrollment/app.mjs`
-- Create: `tools/m2-enrollment/enrollment-config.json`
+- Create: `tools/m2-enrollment/enrollment-config.mjs`
 - Create: `tools/m2-enrollment/tests/app.test.mjs`
+- Create: `tools/m2-enrollment/tests/fixtures/synthetic-enrollment.mp3`
 - Create: `scripts/test_enrollment_static_contract.py`
+- Create: `scripts/enrollment_browser_privacy_smoke.mjs`
 
 **Configured candidate:**
 
-```json
-{
-  "schemaVersion": 1,
-  "assetVersion": "m2-island-party-v1",
-  "displayLabel": "Island Party by NDA",
-  "expectedExtension": ".mp3",
-  "trackBpmHypothesis": 110,
-  "trackBpmVerified": false,
-  "beatsPerBar": 4,
-  "percussionRecipeId": "kick-snare-v1"
-}
+```js
+export const ENROLLMENT_CONFIG = Object.freeze({
+  schemaVersion: 1,
+  assetVersion: 'm2-island-party-v1',
+  displayLabel: 'Island Party by NDA',
+  expectedExtension: '.mp3',
+  expectedMimeType: 'audio/mpeg',
+  trackBpmHypothesis: 110,
+  trackBpmVerified: false,
+  beatsPerBar: 4,
+  percussionRecipeId: 'kick-snare-v1',
+});
 ```
 
 **RED:** Tests define:
 
 - one labeled audio file input with `.mp3,audio/mpeg` acceptance;
+- observed `File.type` must be exactly `audio/mpeg`; empty or unexpected Android MIME escalates rather than being guessed, and `accept` remains only a picker hint;
 - a numeric downbeat input, Raw Web Audio preview controls, Use preview time, Analyze cue, Unload, Copy report, and Download report;
 - final report remains disabled until two matching-SHA load/unload cycles complete and BPM is explicitly confirmed;
 - mismatch on cycle two resets enrollment instead of merging identities;
-- copy/download output uses the sanitized report allowlist;
-- config loads from exactly `./enrollment-config.json` before selection;
+- copy output and a user-gesture `data:application/json` download use a closed recursive report schema;
+- config imports statically from exactly `./enrollment-config.mjs`; no runtime config request exists;
+- meta CSP sets `default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'none'; media-src 'none'; object-src 'none'; worker-src 'none'; form-action 'none'; base-uri 'none'`, and framed execution is rejected as defense in depth;
 - no XHR, WebSocket, EventSource, sendBeacon, storage, service worker, object URL, form submission, media element, or file-derived fetch path exists;
 - filename is never rendered or logged;
 - mobile accessibility: one H1, associated labels, 48×56 px controls, focus-visible treatment, live status, safe-area padding, reduced-motion rule.
+
+The real-browser privacy smoke launches Chrome against a local server, selects the synthetic MP3 through the actual file input using a deliberately sensitive filename, and arms request/console/error/unhandled-rejection tripwires after boot. It drives success, failure, cancel, preview, copy, download, and unload paths and requires zero post-selection requests plus no filename/bytes in DOM, logs, exceptions, clipboard, or downloaded JSON. The fixture is test-only and is never staged publicly.
 
 Run and expect failure because the UI does not exist:
 
@@ -150,6 +160,7 @@ python3 -m unittest -v scripts/test_enrollment_static_contract.py
 
 - Create: `scripts/stage_pages.py`
 - Create: `scripts/test_stage_pages.py`
+- Create: `scripts/gate1-public-manifest.json`
 - Modify: `scripts/verify_gate.py`
 - Modify: `scripts/test_verify_gate.py`
 - Modify: `scripts/test_static_contract.py`
@@ -160,9 +171,11 @@ python3 -m unittest -v scripts/test_enrollment_static_contract.py
 - stage script copies only the existing Gate 1 allowlist to `/` and enrollment allowlist to `/enroll/`;
 - root build placeholders resolve to accepted Gate 1 SHA `11df30f6f6cf90940bee425847614abaf26cc6f1`;
 - enrollment placeholders resolve to the deploying feature SHA;
-- staged root files byte-match a fixture generated from the accepted Gate 1 source and SHA;
+- every staged root file must byte-match its fixed rendered SHA-256 in `gate1-public-manifest.json` before artifact upload;
 - no private audio extensions are staged under `/enroll/`;
-- unified verifier includes enrollment Python tests, enrollment Node tests, module imports, and staging tests;
+- enrollment HTML, every executable module, and static config carry the same deploying SHA and reject mixed cached builds;
+- unified verifier includes enrollment Python tests, enrollment Node tests, module imports, browser privacy smoke, and staging tests;
+- pull requests run verification/staging without deploy permission or environment; only a push to `main` may enter the existing Pages deployment job;
 - workflow uses only the unified verifier and stage script, pinned actions, least privilege, and the explicit artifact directory.
 
 Run and expect failure before staging implementation:
@@ -211,9 +224,10 @@ git diff --check
 1. Stage the complete candidate and prove no unstaged/untracked drift.
 2. Run independent spec-compliance, privacy/security, and code-quality reviews.
 3. Fix only verified findings; rerun the focused and unified gates.
-4. Push `feat/m2-enrollment-bootstrap`.
-5. Run the Pages workflow for that exact branch/commit and wait for success.
-6. Verify live `/` still identifies Gate 1 commit `11df30f6…` and retains its original controls.
-7. Verify live `/enroll/` identifies the feature commit, exposes the file picker, and produces no console errors.
-8. Dynamically import the deployed analyzer and exercise real Web Crypto/Web Audio decode against the public generated Gate 1 WAV as a non-private browser smoke.
-9. Stop before claiming Pixel enrollment complete; Tony performs the private-file run on the accepted Android device.
+4. Push `feat/m2-enrollment-bootstrap`, open a pull request, and require its non-deploy verification job to pass.
+5. Merge the reviewed exact commit to `main`; do not broaden the Pages environment's main-only deployment policy.
+6. Wait for the exact `main` merge commit's Pages deployment to succeed.
+7. Verify `/enroll` canonical behavior, `/enroll/`, direct module paths, and query-string loads; enrollment identifies the merge commit and has no console errors.
+8. Verify live `/` still identifies Gate 1 commit `11df30f6…`, matches the fixed public manifest, and retains its original controls.
+9. Run the desktop real-Chrome privacy smoke through the actual file input with the non-private MP3 fixture before merge. The private candidate remains local and is the first target-Pixel MP3/file-picker acceptance run.
+10. Stop before claiming Pixel enrollment or browser/native memory release complete; Tony performs the private-file run on the accepted Android device and shares only the closed-schema report.
