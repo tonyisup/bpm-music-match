@@ -85,6 +85,10 @@ node --test tools/m2-enrollment/tests/enrollment-lifecycle.test.mjs
 **Files:**
 
 - Create: `tools/m2-enrollment/enrollment-browser.mjs`
+- Create: `tools/m2-enrollment/enrollment-browser-load.mjs`
+- Create: `tools/m2-enrollment/enrollment-browser-preview.mjs`
+- Create: `tools/m2-enrollment/enrollment-browser-resources.mjs`
+- Create: `tools/m2-enrollment/enrollment-browser-shared.mjs`
 - Create: `tools/m2-enrollment/tests/enrollment-browser.test.mjs`
 - Create: `tools/m2-enrollment/tests/fake-audio.mjs`
 
@@ -93,13 +97,17 @@ node --test tools/m2-enrollment/tests/enrollment-lifecycle.test.mjs
 - size is rejected before `arrayBuffer()`;
 - lowercase SHA-256 is computed before decode;
 - exactly one tokenized load is active, with one 15-second aggregate hash/decode deadline;
-- Cancel invalidates the token and blocks replacement until teardown settles; late hash/decode results are discarded and their context is closed;
-- raw bytes are dereferenced after hash/decode settlement and the file input is cleared in a read-stage `finally` on success, cancellation, and failure;
+- Cancel invalidates the token and blocks replacement until application-owned teardown settles; every read/hash/decode await races invalidation, late results are discarded without taking ownership, and any allocated context is closed;
+- cancellation never waits indefinitely for an uncontrollable read/hash/decode promise; application-owned raw bytes are dereferenced on teardown without claiming browser-native release, and the file input is cleared synchronously immediately after capturing the `File`, before any metadata read or `arrayBuffer()` call;
+- the token is rechecked before context allocation, allocation is frozen before close begins, and no context may appear after teardown has made its close decision;
+- file selection, decoded metadata, methods, and audio-clock values cross typed sanitizing boundaries; decoded scalar metadata is read once and the same canonical values drive validation and public output;
+- non-object context factory results never enter ownership accounting; an allocated context object is counted before remaining method inspection, closed if a usable `close()` boundary exists, and otherwise retained honestly in reload-only state; a non-thenable `close()` result cannot prove close settlement;
 - bounded start/end and cue windows use `copyFromChannel()` into fixed scratch arrays; no full-channel view/subarray is retained;
-- preview uses one owned, one-shot `AudioBufferSourceNode`, never a media element; each direct Play gesture performs tokenized `resume()`, settles any old source, and derives position from source offset plus context time;
+- an explicit preview lifecycle state machine owns request generations and the `idle`/`resuming`/`replacing`/`stopping`/`running`/invalidated/reload-only phases; preview uses one owned, one-shot `AudioBufferSourceNode`, never a media element; each direct Play gesture requires a thenable `resume()` settlement, settles any old source, and derives position from source offset plus context time; Stop invalidates a Play still awaiting resume, and an accepted old-source stop remains subject to the shared one-second settlement boundary even if replacement resume rejects, never settles, or is non-thenable; missing `onended` never falsely decrements the source counter;
 - object/file URLs are never created;
-- Unload, `pagehide`, and foreground loss invalidate loads, stop preview, clear references, and initiate context close; close rejection/timeout is reload-only and cannot count as a successful unload;
+- Unload, `pagehide`, and foreground loss invalidate loads, stop preview, clear references, and initiate context close; close rejection/timeout is reload-only and cannot count as a successful unload; a genuine successful close after timeout may clear live application references but cannot rewrite the historical timeout result or re-enable replacement;
 - counters decrement only after source/context settlement;
+- timer-adapter failures are sanitized and cannot replace typed outcomes or strand teardown state;
 - thrown errors and result objects never contain the selected filename or bytes.
 
 Run and expect failure because the module is absent:
@@ -108,7 +116,7 @@ Run and expect failure because the module is absent:
 node --test tools/m2-enrollment/tests/enrollment-browser.test.mjs
 ```
 
-**GREEN:** Implement the injected browser boundary and rerun focused plus enrollment tests.
+**GREEN:** Implement a thin injected controller over separate load-token/canonicalization, preview-state-machine, resource-ownership, and shared-value modules. Keep `createEnrollmentBrowserController` as the sole public export and rerun focused plus enrollment tests.
 
 ## Task 3: Accessible two-cycle enrollment UI
 
