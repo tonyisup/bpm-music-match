@@ -5,6 +5,7 @@ import * as enrollmentCore from '../enrollment-core.mjs';
 import * as enrollmentLifecycle from '../enrollment-lifecycle.mjs';
 import * as enrollmentMeasurements from '../enrollment-measurements.mjs';
 import * as enrollmentReport from '../enrollment-report.mjs';
+import { cueInput, validDecoded, validTiming } from './test-fixtures.mjs';
 
 const {
   createApplicationMemoryEvidence,
@@ -16,32 +17,6 @@ const {
   validateDecodedBounds,
   validateTimingBounds,
 } = enrollmentMeasurements;
-
-function validDecoded(overrides = {}) {
-  const decoded = {
-    durationSeconds: 180,
-    channelCount: 2,
-    sampleRate: 48_000,
-    ...overrides,
-  };
-  return {
-    ...decoded,
-    frameCount: Object.hasOwn(overrides, 'frameCount')
-      ? overrides.frameCount
-      : Number.isFinite(decoded.durationSeconds) && Number.isSafeInteger(decoded.sampleRate)
-        ? Math.round(decoded.durationSeconds * decoded.sampleRate)
-        : 8_640_000,
-  };
-}
-
-function validTiming(overrides = {}) {
-  return {
-    trackBpm: 120,
-    targetEntryDownbeatSeconds: 2,
-    decodedDurationSeconds: 10,
-    ...overrides,
-  };
-}
 
 function zeroCounters(overrides = {}) {
   return {
@@ -66,15 +41,6 @@ function completedCycle(sha256 = 'a'.repeat(64), overrides = {}) {
 
 function evaluateCycles(cycles) {
   return evaluateApplicationMemoryContract(createApplicationMemoryEvidence(cycles));
-}
-
-function cueInput(channelSamples, overrides = {}) {
-  return {
-    channelSamples,
-    sampleRate: 8_000,
-    expectedChannelCount: channelSamples.length,
-    ...overrides,
-  };
 }
 
 const FAILED_MEMORY_CONTRACT = {

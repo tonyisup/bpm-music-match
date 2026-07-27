@@ -945,8 +945,9 @@ async function runMismatchLifecycleScenario(cdp, pageUrl, firstPath, mismatchPat
 async function waitForDownload(cdp, action) {
   let downloadGuid = null;
   let suggestedFilename = null;
+  let remove = () => {};
   const completion = new Promise((resolve, reject) => {
-    const remove = cdp.onEvent((message) => {
+    remove = cdp.onEvent((message) => {
       if (message.method === 'Browser.downloadWillBegin') {
         downloadGuid = message.params?.guid ?? null;
         suggestedFilename = message.params?.suggestedFilename ?? null;
@@ -954,19 +955,21 @@ async function waitForDownload(cdp, action) {
           && downloadGuid !== null
           && message.params?.guid === downloadGuid) {
         if (message.params.state === 'completed') {
-          remove();
           resolve();
         } else if (message.params.state === 'canceled') {
-          remove();
           reject(new Error('report download was canceled'));
         }
       }
     });
   });
-  await action();
-  await bounded(completion, 'report download', PAGE_TIMEOUT_MS);
-  assert.equal(suggestedFilename, ENROLLMENT_REPORT_FILENAME);
-  return suggestedFilename;
+  try {
+    await action();
+    await bounded(completion, 'report download', PAGE_TIMEOUT_MS);
+    assert.equal(suggestedFilename, ENROLLMENT_REPORT_FILENAME);
+    return suggestedFilename;
+  } finally {
+    remove();
+  }
 }
 
 async function completeTwoCycleReport(cdp, scenario, sensitiveFixturePath) {

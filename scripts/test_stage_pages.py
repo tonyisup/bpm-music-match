@@ -8,6 +8,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest import mock
 from pathlib import Path
 
 
@@ -227,18 +228,19 @@ class StagePagesTests(unittest.TestCase):
             "extra allowlist entry": lambda value: value["files"].append(dict(value["files"][0])),
             "swapped source destination mapping": swap_non_rendered_destinations,
         }
-        for label, mutate in variants.items():
+        for index, (label, mutate) in enumerate(variants.items()):
             with self.subTest(label=label):
                 manifest = self.write_manifest_variant(mutate)
-                output = self.temp_root / f"invalid-{len(list(self.temp_root.iterdir()))}"
+                output = self.temp_root / f"invalid-{index}"
                 with self.assertRaises(self.stager.StageError):
                     self.stager.stage_pages(DEPLOY_COMMIT, output, manifest_path=manifest)
                 self.assertFalse(output.exists())
 
     def test_invalid_deploy_sha_is_rejected_before_staging(self):
-        for invalid in ["", "abc", DEPLOY_COMMIT.upper(), "g" * 40, DEPLOY_COMMIT + "0"]:
+        invalid_values = ["", "abc", DEPLOY_COMMIT.upper(), "g" * 40, DEPLOY_COMMIT + "0"]
+        for index, invalid in enumerate(invalid_values):
             with self.subTest(invalid=invalid):
-                output = self.temp_root / f"invalid-sha-{len(list(self.temp_root.iterdir()))}"
+                output = self.temp_root / f"invalid-sha-{index}"
                 with self.assertRaises(self.stager.StageError):
                     self.stager.stage_pages(invalid, output)
                 self.assertFalse(output.exists())
@@ -252,6 +254,47 @@ class StagePagesTests(unittest.TestCase):
             self.stager.stage_pages(DEPLOY_COMMIT, output)
         self.assertEqual(marker.read_text(encoding="utf-8"), "belongs to another publisher")
         self.assertEqual(relative_files(output), {"owner.txt"})
+
+    def test_exclusive_publication_rejects_missing_runtime_symbols_without_paths(self):
+        for platform in ["darwin", "linux"]:
+            with self.subTest(platform=platform), mock.patch.object(
+                self.stager.sys, "platform", platform
+            ), mock.patch.object(self.stager.ctypes, "CDLL", return_value=object()):
+                with self.assertRaisesRegex(
+                    self.stager.StageError,
+                    "^exclusive publication is unsupported by this runtime$",
+                ):
+                    self.stager._rename_exclusive(
+                        self.temp_root / "PRIVATE_SOURCE",
+                        self.temp_root / "PRIVATE_DESTINATION",
+                    )
+
+    def test_exclusive_publication_rejects_unsupported_kernel_errno(self):
+        class FailedRename:
+            argtypes = None
+            restype = None
+
+            def __call__(self, *args):
+                del args
+                return -1
+
+        library = type("Library", (), {"renameat2": FailedRename()})()
+        for error_number in [self.stager.errno.ENOSYS, self.stager.errno.EINVAL]:
+            with self.subTest(error_number=error_number), mock.patch.object(
+                self.stager.sys, "platform", "linux"
+            ), mock.patch.object(
+                self.stager.ctypes, "CDLL", return_value=library
+            ), mock.patch.object(
+                self.stager.ctypes, "get_errno", return_value=error_number
+            ):
+                with self.assertRaisesRegex(
+                    self.stager.StageError,
+                    "^exclusive publication is unsupported by this runtime$",
+                ):
+                    self.stager._rename_exclusive(
+                        self.temp_root / "PRIVATE_SOURCE",
+                        self.temp_root / "PRIVATE_DESTINATION",
+                    )
 
     def test_cli_has_generic_path_free_diagnostics(self):
         private_output = self.temp_root / "SENSITIVE_LOCAL_OUTPUT_NAME"

@@ -16,6 +16,11 @@ EXACT_CSP = (
 
 
 class EnrollmentParser(HTMLParser):
+    VOID_ELEMENTS = frozenset({
+        "area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta",
+        "param", "source", "track", "wbr",
+    })
+
     def __init__(self):
         super().__init__()
         self.tags: list[tuple[str, dict[str, str | None]]] = []
@@ -25,7 +30,11 @@ class EnrollmentParser(HTMLParser):
     def handle_starttag(self, tag, attrs):
         values = dict(attrs)
         self.tags.append((tag, values))
-        self._open_ids.append(values.get("id"))
+        if tag not in self.VOID_ELEMENTS:
+            self._open_ids.append(values.get("id"))
+
+    def handle_startendtag(self, tag, attrs):
+        self.tags.append((tag, dict(attrs)))
 
     def handle_endtag(self, tag):
         del tag
@@ -49,15 +58,25 @@ class EnrollmentParser(HTMLParser):
         )
 
 
+def source_between(test_case, source, start_marker, end_marker):
+    start = source.find(start_marker)
+    test_case.assertNotEqual(start, -1, f"missing source marker: {start_marker}")
+    end = source.find(end_marker, start)
+    test_case.assertNotEqual(end, -1, f"missing source marker after start: {end_marker}")
+    return source[start:end]
+
+
 class EnrollmentStaticContractTests(unittest.TestCase):
     def setUp(self):
         self.html_path = ENROLLMENT_ROOT / "index.html"
         self.css_path = ENROLLMENT_ROOT / "styles.css"
         self.app_path = ENROLLMENT_ROOT / "app.mjs"
+        self.browser_path = ENROLLMENT_ROOT / "enrollment-browser.mjs"
         self.config_path = ENROLLMENT_ROOT / "enrollment-config.mjs"
         self.html = self.html_path.read_text()
         self.css = self.css_path.read_text()
         self.app = self.app_path.read_text()
+        self.browser = self.browser_path.read_text()
         self.config = self.config_path.read_text()
         self.parser = EnrollmentParser()
         self.parser.feed(self.html)
@@ -197,9 +216,12 @@ class EnrollmentStaticContractTests(unittest.TestCase):
         smoke = (REPO_ROOT / "scripts" / "enrollment_browser_privacy_smoke.mjs").read_text(
             encoding="utf-8"
         )
-        start = smoke.index("async function completeTwoCycleReport")
-        end = smoke.index("\nasync function runCopyPagehideScenario", start)
-        protocol = smoke[start:end]
+        protocol = source_between(
+            self,
+            smoke,
+            "async function completeTwoCycleReport",
+            "\nasync function runCopyPagehideScenario",
+        )
 
         for selector in ["#play-preview", "#use-preview-time", "#stop-preview", "#analyze-cue"]:
             self.assertEqual(protocol.count(f"await click(cdp, scenario, '{selector}')"), 2)
@@ -210,6 +232,51 @@ class EnrollmentStaticContractTests(unittest.TestCase):
             "controls.analyze.disabled = !loadedReady || !model.previewConfirmed || operationPending;",
             self.app,
         )
+
+    def test_browser_harness_and_ui_guards_fail_closed(self):
+        smoke = (REPO_ROOT / "scripts" / "enrollment_browser_privacy_smoke.mjs").read_text(
+            encoding="utf-8"
+        )
+        download_wait = source_between(
+            self,
+            smoke,
+            "async function waitForDownload",
+            "\nasync function completeTwoCycleReport",
+        )
+        self.assertIn("try {", download_wait)
+        self.assertIn("} finally {\n    remove();\n  }", download_wait)
+
+        self.assertIn("owner === null", self.browser)
+        self.assertIn("import { COUNTER_KEYS } from './enrollment-browser-shared.mjs';", self.app)
+        self.assertNotIn("const COUNTER_KEYS =", self.app)
+        self.assertNotIn("const APPLICATION_COUNTER_KEYS =", self.app)
+        self.assertIn("controls.bpm.checked = model.bpmConfirmed;", self.app)
+        bpm_change = source_between(
+            self,
+            self.app,
+            "function applyConfiguredBpmChange",
+            "\nexport function main",
+        )
+        self.assertIn("try {", bpm_change)
+        self.assertIn("} catch {", bpm_change)
+        self.assertEqual(bpm_change.count("render();"), 2)
+        self.assertIn("Configured BPM confirmation could not be updated.", bpm_change)
+
+        preview_group = next(
+            attrs
+            for attrs in self.parser.elements("div")
+            if attrs.get("aria-label") == "Raw Web Audio preview controls"
+        )
+        self.assertEqual(preview_group.get("role"), "group")
+        self.assertEqual(preview_group.get("aria-label"), "Raw Web Audio preview controls")
+
+    def test_parser_keeps_text_ownership_across_void_elements(self):
+        parser = EnrollmentParser()
+        parser.feed(
+            '<div id="owner">before<input id="void-control">after<br>done'
+            '<img id="void-image"/>tail</div>'
+        )
+        self.assertEqual(parser.text_by_id, {"owner": "beforeafterdonetail"})
 
     def test_mobile_accessibility_safe_area_and_reduced_motion_contract(self):
         for required in [

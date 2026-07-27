@@ -179,7 +179,7 @@ export function createEnrollmentBrowserController({
   }
 
   function analyzeCue({ cueTimeSeconds } = {}) {
-    if (state !== 'ready' || owner?.decodedBuffer === null || owner?.decoded === null) {
+    if (state !== 'ready' || owner === null || owner.decodedBuffer === null || owner.decoded === null) {
       throw typedError('track-not-ready');
     }
     const sampleRate = owner.decoded.sampleRate;

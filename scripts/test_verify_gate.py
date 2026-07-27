@@ -173,7 +173,14 @@ class VerifyGateContractTests(unittest.TestCase):
         self.assertIn("const chromePath = await discoverChromeExecutable();", source)
         self.assertIn("spawn(chromePath, [", source)
         self.assertNotIn("shell: true", source)
-        self.assertNotRegex(source, r"\bwhich\b|command\s+-v")
+        command_discovery = re.compile(
+            r"(?m)(?:^|[;&|]\s*)which\s+\S|command\s+-v(?:\s+|$)"
+            r"|(?:spawn|spawnSync|execFile|execFileSync)\s*\(\s*['\"]which['\"]"
+        )
+        self.assertIsNone(command_discovery.search("a comment explaining which fixed path is used"))
+        for invocation in ["which google-chrome", "command -v chromium", "spawn('which', ['chrome'])"]:
+            self.assertIsNotNone(command_discovery.search(invocation), invocation)
+        self.assertNotRegex(source, command_discovery)
 
 
 if __name__ == "__main__":

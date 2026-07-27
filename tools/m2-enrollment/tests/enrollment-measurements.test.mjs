@@ -7,34 +7,9 @@ import {
   validateDecodedBounds,
   validateTimingBounds,
 } from '../enrollment-measurements.mjs';
+import { cueInput, validDecoded, validTiming } from './test-fixtures.mjs';
 
 const MiB = 1024 * 1024;
-
-function validDecoded(overrides = {}) {
-  const decoded = {
-    durationSeconds: 180,
-    channelCount: 2,
-    sampleRate: 48_000,
-    ...overrides,
-  };
-  return {
-    ...decoded,
-    frameCount: Object.hasOwn(overrides, 'frameCount')
-      ? overrides.frameCount
-      : Number.isFinite(decoded.durationSeconds) && Number.isSafeInteger(decoded.sampleRate)
-        ? Math.round(decoded.durationSeconds * decoded.sampleRate)
-        : 8_640_000,
-  };
-}
-
-function validTiming(overrides = {}) {
-  return {
-    trackBpm: 120,
-    targetEntryDownbeatSeconds: 2,
-    decodedDurationSeconds: 10,
-    ...overrides,
-  };
-}
 
 test('compressed-byte preflight accepts the inclusive 20 MiB limit without byte content', () => {
   const result = preflightCompressedBytes(20 * MiB);
@@ -188,15 +163,6 @@ test('timing bounds reject finite BPM values whose derived timing values overflo
   assert.notEqual(JSON.stringify(result), undefined);
   assert.equal(JSON.stringify(result).includes('null'), true);
 });
-
-function cueInput(channelSamples, overrides = {}) {
-  return {
-    channelSamples,
-    sampleRate: 8_000,
-    expectedChannelCount: channelSamples.length,
-    ...overrides,
-  };
-}
 
 test('cue energy combines every decoded channel sample from exactly 50 ms for RMS and peak', () => {
   const channelA = [...Array(16).fill(0.05), ...Array(384).fill(0)];

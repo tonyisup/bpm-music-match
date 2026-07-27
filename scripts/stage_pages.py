@@ -201,23 +201,28 @@ def _rename_exclusive(source: Path, destination: Path) -> None:
     libc = ctypes.CDLL(None, use_errno=True)
     source_bytes = os.fsencode(source)
     destination_bytes = os.fsencode(destination)
-    if sys.platform == "darwin":
-        rename = libc.renamex_np
-        rename.argtypes = [ctypes.c_char_p, ctypes.c_char_p, ctypes.c_uint]
-        rename.restype = ctypes.c_int
-        result = rename(source_bytes, destination_bytes, 0x00000004)
-    elif sys.platform.startswith("linux"):
-        rename = libc.renameat2
-        rename.argtypes = [ctypes.c_int, ctypes.c_char_p, ctypes.c_int, ctypes.c_char_p, ctypes.c_uint]
-        rename.restype = ctypes.c_int
-        result = rename(-100, source_bytes, -100, destination_bytes, 0x00000001)
-    else:
-        raise StageError("exclusive publication is unsupported on this platform")
+    try:
+        if sys.platform == "darwin":
+            rename = libc.renamex_np
+            rename.argtypes = [ctypes.c_char_p, ctypes.c_char_p, ctypes.c_uint]
+            rename.restype = ctypes.c_int
+            result = rename(source_bytes, destination_bytes, 0x00000004)
+        elif sys.platform.startswith("linux"):
+            rename = libc.renameat2
+            rename.argtypes = [ctypes.c_int, ctypes.c_char_p, ctypes.c_int, ctypes.c_char_p, ctypes.c_uint]
+            rename.restype = ctypes.c_int
+            result = rename(-100, source_bytes, -100, destination_bytes, 0x00000001)
+        else:
+            raise StageError("exclusive publication is unsupported on this platform")
+    except AttributeError as error:
+        raise StageError("exclusive publication is unsupported by this runtime") from error
     if result == 0:
         return
     error_number = ctypes.get_errno()
     if error_number == errno.EEXIST:
         raise StageError("output already exists")
+    if error_number in {errno.ENOSYS, errno.EINVAL}:
+        raise StageError("exclusive publication is unsupported by this runtime")
     raise StageError("atomic publication failed")
 
 

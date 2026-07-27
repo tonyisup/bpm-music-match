@@ -2,6 +2,7 @@ import { assertEnrollmentBuildCommit } from './enrollment-build.mjs';
 import { assertEnrollmentHtmlBuildCommit } from './enrollment-build.mjs';
 import { ENROLLMENT_CONFIG } from './enrollment-config.mjs';
 import { createEnrollmentBrowserController } from './enrollment-browser.mjs';
+import { COUNTER_KEYS } from './enrollment-browser-shared.mjs';
 import {
   createApplicationMemoryEvidence,
   evaluateApplicationMemoryContract,
@@ -30,13 +31,6 @@ const CYCLE_KEYS = Object.freeze([
   'unloadCompleted',
   'contextCloseSettled',
   'counters',
-]);
-const COUNTER_KEYS = Object.freeze([
-  'rawBuffers',
-  'decodedBuffers',
-  'contexts',
-  'previewSources',
-  'sourceRegistries',
 ]);
 const CUE_INPUT_KEYS = Object.freeze(['targetEntryDownbeatSeconds', 'cueAnalysis']);
 const CUE_ANALYSIS_KEYS = Object.freeze([
@@ -328,20 +322,12 @@ export function createUiOperationGate() {
   });
 }
 
-const APPLICATION_COUNTER_KEYS = Object.freeze([
-  'rawBuffers',
-  'decodedBuffers',
-  'contexts',
-  'previewSources',
-  'sourceRegistries',
-]);
-
 export function isCleanApplicationTeardownResult(result) {
   try {
     return result?.ok === true
       && result.cycle?.unloadCompleted === true
       && result.cycle?.contextCloseSettled === true
-      && APPLICATION_COUNTER_KEYS.every((key) => result.cycle.counters?.[key] === 0);
+      && COUNTER_KEYS.every((key) => result.cycle.counters?.[key] === 0);
   } catch {
     return false;
   }
@@ -361,6 +347,20 @@ function element(documentValue, id) {
   const value = documentValue.getElementById(id);
   if (value === null) throw new TypeError(`required UI control is missing: ${id}`);
   return value;
+}
+
+function applyConfiguredBpmChange({ workflow, control, render, setStatus }) {
+  const requestedConfirmation = control.checked;
+  try {
+    workflow.confirmConfiguredBpm(requestedConfirmation);
+    render();
+    setStatus(requestedConfirmation
+      ? 'Configured BPM explicitly confirmed.'
+      : 'Configured BPM confirmation removed.');
+  } catch {
+    render();
+    setStatus('Configured BPM confirmation could not be updated.');
+  }
 }
 
 export function main(documentValue = document) {
@@ -429,6 +429,7 @@ export function main(documentValue = document) {
     controls.useTime.disabled = !loadedReady || !previewRunning || operationPending;
     controls.analyze.disabled = !loadedReady || !model.previewConfirmed || operationPending;
     controls.bpm.disabled = operationPending;
+    controls.bpm.checked = model.bpmConfirmed;
     controls.unload.disabled = !loadedReady || !model.cueConfirmed || operationPending;
     controls.copy.disabled = reportExport === null || operationPending;
     controls.download.disabled = reportExport === null || operationPending;
@@ -623,11 +624,7 @@ export function main(documentValue = document) {
   });
 
   controls.bpm.addEventListener('change', () => {
-    workflow.confirmConfiguredBpm(controls.bpm.checked);
-    render();
-    setStatus(controls.bpm.checked
-      ? 'Configured BPM explicitly confirmed.'
-      : 'Configured BPM confirmation removed.');
+    applyConfiguredBpmChange({ workflow, control: controls.bpm, render, setStatus });
   });
 
   controls.unload.addEventListener('click', async () => {

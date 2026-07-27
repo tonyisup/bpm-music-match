@@ -222,7 +222,7 @@ pre {
   padding: 0.85rem;
   background: #e9edef;
   color: #172026;
-  font: 0.78rem/1.45 ui-monospace, "SFMono-Regular", Consolas, monospace;
+  font: 0.78rem/1.45 ui-monospace, SFMono-Regular, Consolas, monospace;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }

@@ -155,6 +155,7 @@ class StaticGateContractTests(unittest.TestCase):
         self.assertIn("python-version: '3.13.7'", workflow)
         self.assertIn("node-version: '22.22.3'", workflow)
         self.assertEqual(workflow.count("fetch-depth: 0"), 2)
+        self.assertEqual(workflow.count("persist-credentials: false"), 2)
         self.assertEqual(workflow.count("GITHUB_SHA: ${{ github.sha }}"), 2)
         self.assertIn("group: pages-${{ github.ref }}", workflow)
         self.assertIn("cancel-in-progress: true", workflow)

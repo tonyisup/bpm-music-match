@@ -192,7 +192,8 @@ test('over-limit private selection stops after clear and size without exposing i
   assert.deepEqual(selected.accesses, ['clear', 'size']);
   assert.equal(selected.arrayBufferCalls, 0);
   assert.equal(String(thrown).includes(selected.privateFilename), false);
-  assert.equal(JSON.stringify(thrown).includes(selected.privateFilename), false);
+  assert.equal(thrown.message.includes(selected.privateFilename), false);
+  assert.equal(thrown.stack?.includes(selected.privateFilename) ?? false, false);
 });
 
 test('UI operation gate rejects stale settlements and finishes only the current owner', () => {
