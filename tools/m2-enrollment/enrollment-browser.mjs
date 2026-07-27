@@ -184,9 +184,11 @@ export function createEnrollmentBrowserController({
     }
     const sampleRate = owner.decoded.sampleRate;
     const framesPerChannel = Math.round(sampleRate * 0.050);
+    if (!Number.isFinite(cueTimeSeconds) || cueTimeSeconds < 0) {
+      throw typedError('cue-bounds-invalid');
+    }
     const startInChannel = Math.round(cueTimeSeconds * sampleRate);
-    if (!Number.isFinite(cueTimeSeconds)
-        || !Number.isSafeInteger(startInChannel)
+    if (!Number.isSafeInteger(startInChannel)
         || startInChannel < 0
         || startInChannel + framesPerChannel > owner.decoded.frameCount) {
       throw typedError('cue-bounds-invalid');

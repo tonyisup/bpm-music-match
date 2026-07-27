@@ -835,6 +835,25 @@ test('start, end, and cue inspection use bounded copyFromChannel scratch only', 
   await finishSuccessfulUnload(controller, context);
 });
 
+test('cue analysis rejects negative sub-frame times before rounding or channel access', async () => {
+  const audioBuffer = new FakeAudioBuffer();
+  const context = new FakeAudioContext({ audioBuffer });
+  const { controller } = createHarness({ contexts: [context] });
+  await loadReady(controller);
+  const initialCopyCount = audioBuffer.copyCalls.length;
+  const negativeSubFrameTime = -Number.MIN_VALUE;
+  assert.equal(Object.is(Math.round(negativeSubFrameTime * audioBuffer.sampleRate), -0), true);
+
+  const error = await expectCode(
+    () => controller.analyzeCue({ cueTimeSeconds: negativeSubFrameTime }),
+    'cue-bounds-invalid',
+  );
+
+  assert.equal(audioBuffer.copyCalls.length, initialCopyCount);
+  assertPrivacySafe(error);
+  await finishSuccessfulUnload(controller, context);
+});
+
 test('preview resumes directly in each gesture and replaces only after old one-shot source settles', async () => {
   const audioBuffer = new FakeAudioBuffer({ length: 80_000, duration: 10 });
   const context = new FakeAudioContext({ audioBuffer, currentTime: 10 });

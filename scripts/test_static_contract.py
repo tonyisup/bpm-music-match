@@ -51,6 +51,14 @@ class ContractParser(HTMLParser):
         return [attrs for found_tag, attrs in self.start_tags if found_tag == tag]
 
 
+def source_between(test_case, source, start_marker, end_marker):
+    start = source.find(start_marker)
+    test_case.assertNotEqual(start, -1, f"missing source marker: {start_marker}")
+    end = source.find(end_marker, start)
+    test_case.assertNotEqual(end, -1, f"missing source marker after start: {end_marker}")
+    return source[start:end]
+
+
 class StaticGateContractTests(unittest.TestCase):
     def setUp(self):
         self.html_path = SPIKE_ROOT / "index.html"
@@ -208,9 +216,18 @@ class StaticGateContractTests(unittest.TestCase):
         identity = (enrollment_root / "enrollment-build.mjs").read_text(encoding="utf-8")
         self.assertEqual(identity.count("__ENROLLMENT_BUILD_COMMIT__"), 1)
         app = (enrollment_root / "app.mjs").read_text(encoding="utf-8")
-        html_assertion = app.index("assertEnrollmentHtmlBuildCommit(documentValue);")
-        self.assertLess(html_assertion, app.index("const status = element(documentValue, 'status');"))
-        self.assertLess(html_assertion, app.index("createEnrollmentBrowserController({"))
+        html_startup = source_between(
+            self,
+            app,
+            "assertEnrollmentHtmlBuildCommit(documentValue);",
+            "createEnrollmentBrowserController({",
+        )
+        source_between(
+            self,
+            html_startup,
+            "assertEnrollmentHtmlBuildCommit(documentValue);",
+            "const status = element(documentValue, 'status');",
+        )
 
     def test_identity_wiring_adds_no_exports_to_existing_enrollment_modules(self):
         expected = {
@@ -326,14 +343,16 @@ class StaticGateContractTests(unittest.TestCase):
             "8. Unload the second cycle",
             "9. Download `m2-enrollment-report.json`",
         ]
-        positions = [enrollment_readme.index(step) for step in ordered_pixel_steps]
-        self.assertEqual(positions, sorted(positions))
+        pixel_step_sections = [
+            source_between(self, enrollment_readme, start_step, end_step)
+            for start_step, end_step in zip(ordered_pixel_steps, ordered_pixel_steps[1:])
+        ]
 
-        deployment_step = enrollment_readme[positions[0]:positions[1]]
+        deployment_step = pixel_step_sections[0]
         for required in ["expected full SHA", "exactly equals", "before selecting"]:
             self.assertIn(required, deployment_step)
 
-        bpm_step = enrollment_readme[positions[3]:positions[4]]
+        bpm_step = pixel_step_sections[3]
         for required in [
             "45th", "44 beat intervals", "24.0 seconds", "three times", "±0.25 seconds",
             "all three", "half-time", "double-time", "`trackBpm: 110`",
