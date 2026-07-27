@@ -1,6 +1,12 @@
 import assert from 'node:assert/strict';
 
 export const ENROLLMENT_REPORT_FILENAME = 'm2-enrollment-report.json';
+export const CHROME_TEMPORARY_TREE_REMOVE_OPTIONS = Object.freeze({
+  force: true,
+  recursive: true,
+  maxRetries: 5,
+  retryDelay: 100,
+});
 const CHROME_AUXILIARY_DOWNLOAD_FILENAMES = Object.freeze(['downloads.html']);
 
 export function validateDownloadArtifactNames(downloadFiles) {

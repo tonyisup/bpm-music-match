@@ -23,6 +23,7 @@ import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
 import {
+  CHROME_TEMPORARY_TREE_REMOVE_OPTIONS,
   ENROLLMENT_REPORT_FILENAME,
   validateDownloadArtifactNames,
 } from './enrollment-download-artifacts.mjs';
@@ -1310,7 +1311,7 @@ async function main() {
       }
     }
     try {
-      await rm(temporaryRoot, { force: true, recursive: true });
+      await rm(temporaryRoot, CHROME_TEMPORARY_TREE_REMOVE_OPTIONS);
     } catch {
       cleanupFailures.push('temporary files');
     }
