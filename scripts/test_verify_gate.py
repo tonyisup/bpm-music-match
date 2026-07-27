@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import importlib.util
+import re
+import shlex
 import unittest
 from pathlib import Path
 
@@ -8,6 +10,7 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[1]
 VERIFIER = REPO_ROOT / "scripts" / "verify_gate.py"
 BROWSER_SMOKE = REPO_ROOT / "scripts" / "enrollment_browser_privacy_smoke.mjs"
+ROOT_README = REPO_ROOT / "README.md"
 EXPECTED_STAGE_IDS = [
     "runtime-version",
     "asset-integrity",
@@ -80,6 +83,30 @@ class VerifyGateContractTests(unittest.TestCase):
             ],
         )
 
+        for stage in verifier.STAGES:
+            is_command = stage.fix.startswith(("python3 ", "node "))
+            is_documentation_anchor = re.fullmatch(
+                r"[A-Za-z0-9_./-]+\.md#[a-z0-9-]+", stage.fix
+            ) is not None
+            self.assertTrue(
+                is_command or is_documentation_anchor,
+                f"{stage.stage_id} FIX is neither a command nor a documentation anchor: {stage.fix}",
+            )
+            if is_documentation_anchor:
+                relative_path, fragment = stage.fix.split("#", 1)
+                documentation = (REPO_ROOT / relative_path).read_text(encoding="utf-8")
+                heading_slugs = set()
+                for line in documentation.splitlines():
+                    if not line.startswith("#"):
+                        continue
+                    heading = line.lstrip("#").strip().lower()
+                    heading = re.sub(r"[^a-z0-9 _-]", "", heading)
+                    heading_slugs.add(re.sub(r"[ _]+", "-", heading))
+                self.assertIn(
+                    fragment, heading_slugs,
+                    f"{stage.stage_id} FIX anchor does not resolve: {stage.fix}",
+                )
+
     def test_explicit_enrollment_stages_run_the_required_surfaces(self):
         verifier = load_verifier()
         self.assertEqual(list(verifier.ENROLLMENT_SOURCE_MODULES), EXPECTED_ENROLLMENT_MODULES)
@@ -110,6 +137,14 @@ class VerifyGateContractTests(unittest.TestCase):
             recorded[4][3:],
             ["-v", "scripts/test_stage_pages.py"],
         )
+
+        import_stage = next(
+            stage for stage in verifier.STAGES if stage.stage_id == "enrollment-module-import"
+        )
+        self.assertNotIn("<", import_stage.rerun)
+        self.assertNotIn(">", import_stage.rerun)
+        self.assertEqual(shlex.split(import_stage.rerun), enrollment_import)
+        self.assertIn(import_stage.rerun, ROOT_README.read_text(encoding="utf-8"))
 
     def test_browser_smoke_discovers_fixed_macos_and_ubuntu_chrome_without_shell(self):
         source = BROWSER_SMOKE.read_text(encoding="utf-8")

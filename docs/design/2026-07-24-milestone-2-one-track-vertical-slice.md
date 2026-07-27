@@ -162,6 +162,14 @@ Every trial embeds both identities. The pure contract implementation is split in
 
 The threat boundary is narrower than arbitrary hostile JavaScript: the selected file supplies bytes to the browser hashing/decoding adapters and bounded scalar observations to the pure contracts, not executable object graphs. The design makes no claim against a malicious browser extension or other code that compromised the same realm before these modules evaluated. Any permitted tuning change—including cue annotation, lead-in, match window, percussion, gain, crossfade duration, or curve—creates a new `configVersion`, a new deployment, and a complete protocol restart. The configured SHA is an identity, not a rights claim; private audio bytes never enter the repository.
 
+### Enrollment bootstrap exception
+
+The `/enroll/` utility is a bootstrap exception because the one private candidate MP3 cannot be committed, staged on Pages, uploaded, or sent to another person, while implementation still needs a reviewed identity for those exact local bytes. The utility moves only a closed sanitized report across that boundary. Its public deployment contains the enrollment controller and static policy, never the candidate filename, path, URI, bytes, or audio content.
+
+The exception is intentionally separate from the one-track product architecture. On the accepted Pixel, Tony must select the same local MP3 for two load, preview, cue-analysis, and clean unload cycles; confirm the configured tempo as the track's 1:1 BPM; and manually confirm the target-entry downbeat. A successful report contains only `assetIdentity` and `experimentConfigIdentity`. Its cleanup fields describe application-owned references and settled context closes, not browser/native memory release.
+
+Fixture completion requires the accepted Pixel sequence and review of the exact downloaded `m2-enrollment-report.json`. **Never upload or send the MP3.** Until fixture completion, this bootstrap does not authorize Milestone 2 product implementation. Completion authorizes only use of the reviewed sanitized identity under this approved design; it does not authorize a generalized local-file flow, provider work, persistence, automatic analysis, or broader product scope.
+
 A template is sufficient for design approval, but implementation planning remains blocked until local enrollment completes every field.
 
 ### Audio constraints

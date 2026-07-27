@@ -10,6 +10,7 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SPIKE_ROOT = REPO_ROOT / "spikes" / "001-mobile-web-audio-gate"
+ENROLLMENT_ROOT = REPO_ROOT / "tools" / "m2-enrollment"
 
 
 class ContractParser(HTMLParser):
@@ -251,10 +252,17 @@ class StaticGateContractTests(unittest.TestCase):
             "python3 -m http.server 8000 --bind 127.0.0.1 --directory spikes/001-mobile-web-audio-gate",
             "http://127.0.0.1:8000/", "gh auth status", "build_type=workflow",
             "gh run watch", "PASS runtime-version", "PASS asset-integrity",
-            "PASS static-contract", "PASS module-import", "PASS node-tests", "PASS gate 5/5",
+            "PASS static-contract", "PASS module-import", "PASS node-tests",
+            "PASS enrollment-static-contract", "PASS enrollment-module-import",
+            "PASS enrollment-node-tests", "PASS enrollment-browser-privacy",
+            "PASS pages-staging", "PASS gate 10/10",
         ]:
             self.assertIn(required, root_readme)
-        for stage_id in ["runtime-version", "asset-integrity", "static-contract", "module-import", "node-tests"]:
+        for stage_id in [
+            "runtime-version", "asset-integrity", "static-contract", "module-import", "node-tests",
+            "enrollment-static-contract", "enrollment-module-import", "enrollment-node-tests",
+            "enrollment-browser-privacy", "pages-staging",
+        ]:
             self.assertIn(stage_id, root_readme)
         for error_code in [
             "asset-fetch-failed", "metadata-invalid", "asset-integrity-failed", "module-identity-failed", "decode-failed",
@@ -277,6 +285,66 @@ class StaticGateContractTests(unittest.TestCase):
             "Sonic scent verdict", "Product magic verdict", "README-to-Ready",
         ]:
             self.assertIn(required, worksheet)
+
+    def test_enrollment_documentation_is_one_private_pixel_runbook(self):
+        enrollment_readme_path = ENROLLMENT_ROOT / "README.md"
+        self.assertTrue(enrollment_readme_path.is_file(), "missing private enrollment runbook")
+        enrollment_readme = enrollment_readme_path.read_text(encoding="utf-8")
+        root_readme = (REPO_ROOT / "README.md").read_text(encoding="utf-8")
+        design = (
+            REPO_ROOT / "docs" / "design" / "2026-07-24-milestone-2-one-track-vertical-slice.md"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn("[Private enrollment runbook](tools/m2-enrollment/README.md)", root_readme)
+        self.assertIn("https://tonyisup.github.io/bpm-music-match/enroll/", root_readme)
+        self.assertIn("public enrollment bootstrap URL", root_readme)
+        self.assertNotIn("private bootstrap URL", root_readme)
+        self.assertIn("### Enrollment bootstrap exception", design)
+
+        for required in [
+            "bootstrap exception", "Pixel 8 Pro", "Android 16 build `CP1A.260505.005`",
+            "Chrome `150.0.7871.181`", "https://tonyisup.github.io/bpm-music-match/enroll/",
+            "same local MP3", "1:1", "110 BPM", "Play preview", "Use preview time",
+            "Analyze cue", "Unload", "two matching clean cycles", "m2-enrollment-report.json",
+            "`assetIdentity`", "`experimentConfigIdentity`", "Never upload or send the MP3",
+            "does not authorize Milestone 2 product implementation", "browser/native memory release",
+            "python3 scripts/verify_gate.py", "git diff HEAD --check", "git diff --check",
+            "EXPECTED_DEPLOY_SHA=$(git rev-parse HEAD)",
+            "enrollment-build.mjs?v=<EXPECTED_DEPLOY_SHA>", "ENROLLMENT_BUILD_COMMIT",
+        ]:
+            self.assertIn(required, enrollment_readme)
+
+        ordered_pixel_steps = [
+            "1. Open the deployed `/enroll/` utility",
+            "2. Select the candidate MP3",
+            "3. Preview and confirm the target downbeat",
+            "4. Confirm the configured 110 BPM",
+            "5. Unload the first cycle",
+            "6. Select the same local MP3 again",
+            "7. Repeat preview and cue analysis",
+            "8. Unload the second cycle",
+            "9. Download `m2-enrollment-report.json`",
+        ]
+        positions = [enrollment_readme.index(step) for step in ordered_pixel_steps]
+        self.assertEqual(positions, sorted(positions))
+
+        deployment_step = enrollment_readme[positions[0]:positions[1]]
+        for required in ["expected full SHA", "exactly equals", "before selecting"]:
+            self.assertIn(required, deployment_step)
+
+        bpm_step = enrollment_readme[positions[3]:positions[4]]
+        for required in [
+            "45th", "44 beat intervals", "24.0 seconds", "three times", "±0.25 seconds",
+            "all three", "half-time", "double-time", "`trackBpm: 110`",
+        ]:
+            self.assertIn(required, bpm_step)
+
+        for forbidden in [
+            "upload the MP3 to", "send the MP3 to", "browser memory was released",
+            "native memory was released", "Milestone 2 implementation is authorized",
+            "deployed utility has no network",
+        ]:
+            self.assertNotIn(forbidden, enrollment_readme)
 
 
 if __name__ == "__main__":

@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+import shlex
 import subprocess
 import sys
 import time
@@ -27,6 +28,13 @@ ENROLLMENT_SOURCE_MODULES = (
     "enrollment-measurements.mjs",
     "enrollment-report.mjs",
 )
+ENROLLMENT_IMPORT_EXPRESSION = "await Promise.all([" + ",".join(
+    f'import("./tools/m2-enrollment/{module_name}")'
+    for module_name in ENROLLMENT_SOURCE_MODULES
+) + "]);"
+ENROLLMENT_IMPORT_COMMAND = (
+    "node", "--input-type=module", "--eval", ENROLLMENT_IMPORT_EXPRESSION,
+)
 
 
 class Stage(NamedTuple):
@@ -36,16 +44,16 @@ class Stage(NamedTuple):
 
 
 STAGES = (
-    Stage("runtime-version", "python3 scripts/verify_gate.py", "Install the exact runtimes in README.md#prerequisites."),
+    Stage("runtime-version", "python3 scripts/verify_gate.py", "README.md#prerequisites"),
     Stage("asset-integrity", "python3 -m unittest -v scripts/test_generate_gate_track.py", "python3 scripts/generate_gate_track.py"),
-    Stage("static-contract", "python3 -m unittest -v scripts/test_static_contract.py scripts/test_verify_gate.py", "See README.md#troubleshooting."),
-    Stage("module-import", "node --input-type=module --eval \"await import('./spikes/001-mobile-web-audio-gate/app.mjs')\"", "Inspect the relative .mjs imports named by the failure."),
-    Stage("node-tests", "node --test spikes/001-mobile-web-audio-gate/tests/*.test.mjs", "Run the named failing Node test in isolation."),
-    Stage("enrollment-static-contract", "python3 -m unittest -v scripts/test_enrollment_static_contract.py", "Inspect the named enrollment privacy or accessibility contract."),
-    Stage("enrollment-module-import", "node --input-type=module --eval <enrollment imports>", "Inspect the named enrollment module and its static relative imports."),
-    Stage("enrollment-node-tests", "node --test tools/m2-enrollment/tests/*.test.mjs", "Run the named failing enrollment Node test in isolation."),
-    Stage("enrollment-browser-privacy", "node scripts/enrollment_browser_privacy_smoke.mjs", "Run with an installed supported Chrome and inspect the named privacy scenario."),
-    Stage("pages-staging", "python3 -m unittest -v scripts/test_stage_pages.py", "Inspect the manifest, allowlist, identity, or immutable publication assertion."),
+    Stage("static-contract", "python3 -m unittest -v scripts/test_static_contract.py scripts/test_verify_gate.py", "README.md#static-contract"),
+    Stage("module-import", "node --input-type=module --eval \"await import('./spikes/001-mobile-web-audio-gate/app.mjs')\"", "README.md#module-import"),
+    Stage("node-tests", "node --test spikes/001-mobile-web-audio-gate/tests/*.test.mjs", "README.md#node-tests"),
+    Stage("enrollment-static-contract", "python3 -m unittest -v scripts/test_enrollment_static_contract.py", "README.md#enrollment-and-pages-stages"),
+    Stage("enrollment-module-import", shlex.join(ENROLLMENT_IMPORT_COMMAND), "README.md#enrollment-and-pages-stages"),
+    Stage("enrollment-node-tests", "node --test tools/m2-enrollment/tests/*.test.mjs", "README.md#enrollment-and-pages-stages"),
+    Stage("enrollment-browser-privacy", "node scripts/enrollment_browser_privacy_smoke.mjs", "README.md#enrollment-and-pages-stages"),
+    Stage("pages-staging", "python3 -m unittest -v scripts/test_stage_pages.py", "README.md#enrollment-and-pages-stages"),
 )
 
 
@@ -122,14 +130,7 @@ def execute_stage(stage: Stage) -> tuple[bool, str]:
         ])
 
     if stage.stage_id == "enrollment-module-import":
-        imports = ",".join(
-            f"import('./tools/m2-enrollment/{module_name}')"
-            for module_name in ENROLLMENT_SOURCE_MODULES
-        )
-        return run_command([
-            "node", "--input-type=module", "--eval",
-            f"await Promise.all([{imports}]);",
-        ])
+        return run_command(list(ENROLLMENT_IMPORT_COMMAND))
 
     if stage.stage_id == "enrollment-node-tests":
         tests = sorted(
