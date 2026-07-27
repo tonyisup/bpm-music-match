@@ -1,3 +1,7 @@
+import { assertEnrollmentBuildCommit } from './enrollment-build.mjs';
+
+assertEnrollmentBuildCommit('__ENROLLMENT_BUILD_COMMIT__');
+
 const MiB = 1024 * 1024;
 
 const MAX_COMPRESSED_BYTES = 20 * MiB;

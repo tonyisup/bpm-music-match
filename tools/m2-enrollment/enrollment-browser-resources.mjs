@@ -1,3 +1,7 @@
+import { assertEnrollmentBuildCommit } from './enrollment-build.mjs';
+
+assertEnrollmentBuildCommit('__ENROLLMENT_BUILD_COMMIT__');
+
 import {
   COUNTER_KEYS,
   createDeferred,

@@ -1,3 +1,7 @@
+import { assertEnrollmentBuildCommit } from './enrollment-build.mjs';
+
+assertEnrollmentBuildCommit('__ENROLLMENT_BUILD_COMMIT__');
+
 const COUNTER_KEYS = Object.freeze([
   'rawBuffers',
   'decodedBuffers',

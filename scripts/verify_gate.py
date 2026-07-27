@@ -9,8 +9,24 @@ from typing import NamedTuple
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SPIKE_ROOT = REPO_ROOT / "spikes" / "001-mobile-web-audio-gate"
+ENROLLMENT_ROOT = REPO_ROOT / "tools" / "m2-enrollment"
 EXPECTED_PYTHON = "3.13.7"
 EXPECTED_NODE = "v22.22.3"
+
+ENROLLMENT_SOURCE_MODULES = (
+    "app.mjs",
+    "enrollment-build.mjs",
+    "enrollment-browser-load.mjs",
+    "enrollment-browser-preview.mjs",
+    "enrollment-browser-resources.mjs",
+    "enrollment-browser-shared.mjs",
+    "enrollment-browser.mjs",
+    "enrollment-config.mjs",
+    "enrollment-core.mjs",
+    "enrollment-lifecycle.mjs",
+    "enrollment-measurements.mjs",
+    "enrollment-report.mjs",
+)
 
 
 class Stage(NamedTuple):
@@ -25,6 +41,11 @@ STAGES = (
     Stage("static-contract", "python3 -m unittest -v scripts/test_static_contract.py scripts/test_verify_gate.py", "See README.md#troubleshooting."),
     Stage("module-import", "node --input-type=module --eval \"await import('./spikes/001-mobile-web-audio-gate/app.mjs')\"", "Inspect the relative .mjs imports named by the failure."),
     Stage("node-tests", "node --test spikes/001-mobile-web-audio-gate/tests/*.test.mjs", "Run the named failing Node test in isolation."),
+    Stage("enrollment-static-contract", "python3 -m unittest -v scripts/test_enrollment_static_contract.py", "Inspect the named enrollment privacy or accessibility contract."),
+    Stage("enrollment-module-import", "node --input-type=module --eval <enrollment imports>", "Inspect the named enrollment module and its static relative imports."),
+    Stage("enrollment-node-tests", "node --test tools/m2-enrollment/tests/*.test.mjs", "Run the named failing enrollment Node test in isolation."),
+    Stage("enrollment-browser-privacy", "node scripts/enrollment_browser_privacy_smoke.mjs", "Run with an installed supported Chrome and inspect the named privacy scenario."),
+    Stage("pages-staging", "python3 -m unittest -v scripts/test_stage_pages.py", "Inspect the manifest, allowlist, identity, or immutable publication assertion."),
 )
 
 
@@ -93,6 +114,39 @@ def execute_stage(stage: Stage) -> tuple[bool, str]:
         if not tests:
             return False, "no Node test files found"
         return run_command(["node", "--test", *tests])
+
+    if stage.stage_id == "enrollment-static-contract":
+        return run_command([
+            sys.executable, "-m", "unittest", "-v",
+            "scripts/test_enrollment_static_contract.py",
+        ])
+
+    if stage.stage_id == "enrollment-module-import":
+        imports = ",".join(
+            f"import('./tools/m2-enrollment/{module_name}')"
+            for module_name in ENROLLMENT_SOURCE_MODULES
+        )
+        return run_command([
+            "node", "--input-type=module", "--eval",
+            f"await Promise.all([{imports}]);",
+        ])
+
+    if stage.stage_id == "enrollment-node-tests":
+        tests = sorted(
+            str(path.relative_to(REPO_ROOT))
+            for path in (ENROLLMENT_ROOT / "tests").glob("*.test.mjs")
+        )
+        if not tests:
+            return False, "no enrollment Node test files found"
+        return run_command(["node", "--test", *tests])
+
+    if stage.stage_id == "enrollment-browser-privacy":
+        return run_command(["node", "scripts/enrollment_browser_privacy_smoke.mjs"])
+
+    if stage.stage_id == "pages-staging":
+        return run_command([
+            sys.executable, "-m", "unittest", "-v", "scripts/test_stage_pages.py",
+        ])
 
     return False, f"unknown stage {stage.stage_id}"
 

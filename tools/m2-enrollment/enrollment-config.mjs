@@ -1,3 +1,7 @@
+import { assertEnrollmentBuildCommit } from './enrollment-build.mjs';
+
+assertEnrollmentBuildCommit('__ENROLLMENT_BUILD_COMMIT__');
+
 export const ENROLLMENT_CONFIG = Object.freeze({
   schemaVersion: 1,
   assetVersion: 'm2-island-party-v1',

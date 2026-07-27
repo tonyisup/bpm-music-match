@@ -72,9 +72,11 @@ class EnrollmentStaticContractTests(unittest.TestCase):
         self.assertEqual(csp.get("content"), EXACT_CSP)
         viewport = next(meta for meta in metas if meta.get("name") == "viewport")
         self.assertEqual(viewport.get("content"), "width=device-width, initial-scale=1")
+        build_commit = next(meta for meta in metas if meta.get("name") == "build-commit")
+        self.assertEqual(build_commit.get("content"), "__ENROLLMENT_BUILD_COMMIT__")
         self.assertEqual(
             [script.get("src") for script in self.parser.elements("script")],
-            ["./app.mjs"],
+            ["./app.mjs?v=__ENROLLMENT_BUILD_COMMIT__"],
         )
         self.assertTrue(all(script.get("type") == "module" for script in self.parser.elements("script")))
         self.assertIn('href="./styles.css"', self.html)
@@ -155,6 +157,7 @@ class EnrollmentStaticContractTests(unittest.TestCase):
             "index.html",
             "styles.css",
             "app.mjs",
+            "enrollment-build.mjs",
             "enrollment-config.mjs",
             "enrollment-browser.mjs",
             "enrollment-browser-load.mjs",

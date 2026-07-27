@@ -1,0 +1,46 @@
+{
+  "schemaVersion": 1,
+  "acceptedCommit": "11df30f6f6cf90940bee425847614abaf26cc6f1",
+  "files": [
+    {
+      "source": "spikes/001-mobile-web-audio-gate/index.html",
+      "destination": "index.html",
+      "sha256": "b84ff19029fddf4d3778d7cdeae5a7e1fae6e396bd048ea902c4e1a87f1214d5"
+    },
+    {
+      "source": "spikes/001-mobile-web-audio-gate/styles.css",
+      "destination": "styles.css",
+      "sha256": "069f5fe85f1053850c984093c4d80b72d6d5d6ca08cfea63c4b4b00d100d1141"
+    },
+    {
+      "source": "spikes/001-mobile-web-audio-gate/app.mjs",
+      "destination": "app.mjs",
+      "sha256": "784b355c4165ca6746810be0e8cf778bd40d5c0e0b1b18b2632a1cc7ec12bf26"
+    },
+    {
+      "source": "spikes/001-mobile-web-audio-gate/audio-engine.mjs",
+      "destination": "audio-engine.mjs",
+      "sha256": "d9da2e57f472cedc23f5b1b3569ce35fba65a9cc4682f787cc596224e90bbe3a"
+    },
+    {
+      "source": "spikes/001-mobile-web-audio-gate/audio-math.mjs",
+      "destination": "audio-math.mjs",
+      "sha256": "04612892e1559abb845944112da8ff9a1fd0b4ca46d1cf0824db01f306141d60"
+    },
+    {
+      "source": "spikes/001-mobile-web-audio-gate/asset-metadata.json",
+      "destination": "asset-metadata.json",
+      "sha256": "46c91641042ff54cef8c8bec1e2effebce30329c184f134806e24632683024f8"
+    },
+    {
+      "source": "spikes/001-mobile-web-audio-gate/calibration.json",
+      "destination": "calibration.json",
+      "sha256": "1340d2b00019fe5a7812c7a99b9371e6179fb6d12c920f16a285035087fd9732"
+    },
+    {
+      "source": "spikes/001-mobile-web-audio-gate/assets/gate-track.wav",
+      "destination": "assets/gate-track.wav",
+      "sha256": "d8be8fdd4f5f1d3222c5df86f15fb509d1844c40b40450fc738f2bef812d0033"
+    }
+  ]
+}

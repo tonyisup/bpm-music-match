@@ -7,6 +7,33 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 VERIFIER = REPO_ROOT / "scripts" / "verify_gate.py"
+BROWSER_SMOKE = REPO_ROOT / "scripts" / "enrollment_browser_privacy_smoke.mjs"
+EXPECTED_STAGE_IDS = [
+    "runtime-version",
+    "asset-integrity",
+    "static-contract",
+    "module-import",
+    "node-tests",
+    "enrollment-static-contract",
+    "enrollment-module-import",
+    "enrollment-node-tests",
+    "enrollment-browser-privacy",
+    "pages-staging",
+]
+EXPECTED_ENROLLMENT_MODULES = [
+    "app.mjs",
+    "enrollment-build.mjs",
+    "enrollment-browser-load.mjs",
+    "enrollment-browser-preview.mjs",
+    "enrollment-browser-resources.mjs",
+    "enrollment-browser-shared.mjs",
+    "enrollment-browser.mjs",
+    "enrollment-config.mjs",
+    "enrollment-core.mjs",
+    "enrollment-lifecycle.mjs",
+    "enrollment-measurements.mjs",
+    "enrollment-report.mjs",
+]
 
 
 def load_verifier():
@@ -23,10 +50,7 @@ def load_verifier():
 class VerifyGateContractTests(unittest.TestCase):
     def test_stage_ids_and_order_are_stable(self):
         verifier = load_verifier()
-        self.assertEqual(
-            [stage.stage_id for stage in verifier.STAGES],
-            ["runtime-version", "asset-integrity", "static-contract", "module-import", "node-tests"],
-        )
+        self.assertEqual([stage.stage_id for stage in verifier.STAGES], EXPECTED_STAGE_IDS)
 
     def test_exact_runtime_contract_fails_loudly(self):
         verifier = load_verifier()
@@ -55,6 +79,54 @@ class VerifyGateContractTests(unittest.TestCase):
                 "FIX: python3 scripts/generate_gate_track.py",
             ],
         )
+
+    def test_explicit_enrollment_stages_run_the_required_surfaces(self):
+        verifier = load_verifier()
+        self.assertEqual(list(verifier.ENROLLMENT_SOURCE_MODULES), EXPECTED_ENROLLMENT_MODULES)
+        recorded: list[list[str]] = []
+
+        def record(command):
+            recorded.append(command)
+            return True, ""
+
+        setattr(verifier, "run_command", record)
+        for stage in verifier.STAGES[5:]:
+            passed, output = verifier.execute_stage(stage)
+            self.assertTrue(passed, stage.stage_id)
+            self.assertEqual(output, "")
+
+        self.assertEqual(
+            recorded[0][3:],
+            ["-v", "scripts/test_enrollment_static_contract.py"],
+        )
+        enrollment_import = recorded[1]
+        self.assertEqual(enrollment_import[:3], ["node", "--input-type=module", "--eval"])
+        for module_name in EXPECTED_ENROLLMENT_MODULES:
+            self.assertIn(f"./tools/m2-enrollment/{module_name}", enrollment_import[3])
+        self.assertEqual(recorded[2][:2], ["node", "--test"])
+        self.assertTrue(all(path.startswith("tools/m2-enrollment/tests/") for path in recorded[2][2:]))
+        self.assertEqual(recorded[3], ["node", "scripts/enrollment_browser_privacy_smoke.mjs"])
+        self.assertEqual(
+            recorded[4][3:],
+            ["-v", "scripts/test_stage_pages.py"],
+        )
+
+    def test_browser_smoke_discovers_fixed_macos_and_ubuntu_chrome_without_shell(self):
+        source = BROWSER_SMOKE.read_text(encoding="utf-8")
+        for candidate in [
+            "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+            "/usr/bin/google-chrome",
+            "/usr/bin/google-chrome-stable",
+            "/usr/bin/chromium",
+            "/usr/bin/chromium-browser",
+        ]:
+            self.assertIn(candidate, source)
+        self.assertIn("async function discoverChromeExecutable()", source)
+        self.assertIn("constants.X_OK", source)
+        self.assertIn("const chromePath = await discoverChromeExecutable();", source)
+        self.assertIn("spawn(chromePath, [", source)
+        self.assertNotIn("shell: true", source)
+        self.assertNotRegex(source, r"\bwhich\b|command\s+-v")
 
 
 if __name__ == "__main__":

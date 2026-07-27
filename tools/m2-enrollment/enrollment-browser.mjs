@@ -1,3 +1,7 @@
+import { assertEnrollmentBuildCommit } from './enrollment-build.mjs';
+
+assertEnrollmentBuildCommit('__ENROLLMENT_BUILD_COMMIT__');
+
 import { analyzeCueEnergy } from './enrollment-measurements.mjs';
 import { createLoadBoundary } from './enrollment-browser-load.mjs';
 import { createPreviewLifecycle } from './enrollment-browser-preview.mjs';

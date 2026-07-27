@@ -2,8 +2,9 @@
 
 import assert from 'node:assert/strict';
 import { createHash, randomUUID } from 'node:crypto';
-import { createReadStream } from 'node:fs';
+import { constants, createReadStream } from 'node:fs';
 import {
+  access,
   copyFile,
   mkdir,
   mkdtemp,
@@ -21,7 +22,13 @@ import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
-const CHROME_PATH = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
+const CHROME_CANDIDATES = Object.freeze([
+  '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+  '/usr/bin/google-chrome',
+  '/usr/bin/google-chrome-stable',
+  '/usr/bin/chromium',
+  '/usr/bin/chromium-browser',
+]);
 const EXPECTED_FIXTURE_SHA256 = '9f63dad57226cb5e4a8bd615f0d86e09ab474c9a235cd9230b0f97fe40d26db9';
 const COMMAND_TIMEOUT_MS = 5_000;
 const PAGE_TIMEOUT_MS = 20_000;
@@ -84,6 +91,7 @@ const REQUIRED_BOOT_PATHS = Object.freeze([
   '/tools/m2-enrollment/',
   '/tools/m2-enrollment/styles.css',
   '/tools/m2-enrollment/app.mjs',
+  '/tools/m2-enrollment/enrollment-build.mjs',
   '/tools/m2-enrollment/enrollment-config.mjs',
   '/tools/m2-enrollment/enrollment-browser.mjs',
   '/tools/m2-enrollment/enrollment-browser-load.mjs',
@@ -224,8 +232,20 @@ async function terminateChild(child) {
   }
 }
 
-async function launchChrome(profileDirectory) {
-  const child = spawn(CHROME_PATH, [
+async function discoverChromeExecutable() {
+  for (const candidate of CHROME_CANDIDATES) {
+    try {
+      await access(candidate, constants.X_OK);
+      return candidate;
+    } catch {
+      // Try the next fixed platform location.
+    }
+  }
+  throw new Error('No supported Chrome executable was found');
+}
+
+async function launchChrome(profileDirectory, chromePath) {
+  const child = spawn(chromePath, [
     '--headless=new',
     '--remote-debugging-address=127.0.0.1',
     '--remote-debugging-port=0',
@@ -1162,7 +1182,8 @@ async function main() {
     }
 
     staticServer = await startStaticServer();
-    chrome = await launchChrome(profileDirectory);
+    const chromePath = await discoverChromeExecutable();
+    chrome = await launchChrome(profileDirectory, chromePath);
     cdp = new CdpConnection(chrome.endpoint);
     await cdp.connect();
     const pageUrl = `${staticServer.origin}/tools/m2-enrollment/`;

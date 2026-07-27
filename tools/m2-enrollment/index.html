@@ -3,6 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="build-commit" content="__ENROLLMENT_BUILD_COMMIT__">
   <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'none'; media-src 'none'; object-src 'none'; worker-src 'none'; form-action 'none'; base-uri 'none'">
   <title>Private track enrollment</title>
   <link rel="stylesheet" href="./styles.css">
@@ -73,6 +74,6 @@
 
     <p class="memory-note">Two clean cycles prove application-owned references were cleared and audio contexts closed. Browser heap release is not observed.</p>
   </main>
-  <script type="module" src="./app.mjs"></script>
+  <script type="module" src="./app.mjs?v=__ENROLLMENT_BUILD_COMMIT__"></script>
 </body>
 </html>

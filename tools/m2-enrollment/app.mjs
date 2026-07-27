@@ -1,3 +1,5 @@
+import { assertEnrollmentBuildCommit } from './enrollment-build.mjs';
+import { assertEnrollmentHtmlBuildCommit } from './enrollment-build.mjs';
 import { ENROLLMENT_CONFIG } from './enrollment-config.mjs';
 import { createEnrollmentBrowserController } from './enrollment-browser.mjs';
 import {
@@ -9,6 +11,8 @@ import {
   createSanitizedReport,
   serializeSanitizedReport,
 } from './enrollment-report.mjs';
+
+assertEnrollmentBuildCommit('__ENROLLMENT_BUILD_COMMIT__');
 
 const CONFIG_KEYS = Object.freeze(Object.keys(ENROLLMENT_CONFIG));
 const LOADED_FACT_KEYS = Object.freeze([
@@ -340,6 +344,7 @@ function element(documentValue, id) {
 }
 
 export function main(documentValue = document) {
+  assertEnrollmentHtmlBuildCommit(documentValue);
   const status = element(documentValue, 'status');
   const controls = {
     file: element(documentValue, 'track-file'),
