@@ -131,7 +131,19 @@ class VerifyGateContractTests(unittest.TestCase):
         for module_name in EXPECTED_ENROLLMENT_MODULES:
             self.assertIn(f"./tools/m2-enrollment/{module_name}", enrollment_import[3])
         self.assertEqual(recorded[2][:2], ["node", "--test"])
-        self.assertTrue(all(path.startswith("tools/m2-enrollment/tests/") for path in recorded[2][2:]))
+        self.assertIn("scripts/enrollment-download-artifacts.test.mjs", recorded[2][2:])
+        self.assertTrue(
+            all(
+                path == "scripts/enrollment-download-artifacts.test.mjs"
+                or path.startswith("tools/m2-enrollment/tests/")
+                for path in recorded[2][2:]
+            )
+        )
+        enrollment_node_stage = next(
+            stage for stage in verifier.STAGES if stage.stage_id == "enrollment-node-tests"
+        )
+        self.assertIn("scripts/enrollment-download-artifacts.test.mjs", enrollment_node_stage.rerun)
+        self.assertIn(enrollment_node_stage.rerun, ROOT_README.read_text(encoding="utf-8"))
         self.assertEqual(recorded[3], ["node", "scripts/enrollment_browser_privacy_smoke.mjs"])
         self.assertEqual(
             recorded[4][3:],

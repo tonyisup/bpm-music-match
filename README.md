@@ -159,7 +159,7 @@ Run the named failing test in isolation before changing implementation.
   ```bash
   node --input-type=module --eval 'await Promise.all([import("./tools/m2-enrollment/app.mjs"),import("./tools/m2-enrollment/enrollment-build.mjs"),import("./tools/m2-enrollment/enrollment-browser-load.mjs"),import("./tools/m2-enrollment/enrollment-browser-preview.mjs"),import("./tools/m2-enrollment/enrollment-browser-resources.mjs"),import("./tools/m2-enrollment/enrollment-browser-shared.mjs"),import("./tools/m2-enrollment/enrollment-browser.mjs"),import("./tools/m2-enrollment/enrollment-config.mjs"),import("./tools/m2-enrollment/enrollment-core.mjs"),import("./tools/m2-enrollment/enrollment-lifecycle.mjs"),import("./tools/m2-enrollment/enrollment-measurements.mjs"),import("./tools/m2-enrollment/enrollment-report.mjs")]);'
   ```
-- `enrollment-node-tests`: rerun `node --test tools/m2-enrollment/tests/*.test.mjs`.
+- `enrollment-node-tests`: rerun `node --test scripts/enrollment-download-artifacts.test.mjs tools/m2-enrollment/tests/*.test.mjs`.
 - `enrollment-browser-privacy`: rerun `node scripts/enrollment_browser_privacy_smoke.mjs` with a supported installed Chrome.
 - `pages-staging`: rerun `python3 -m unittest -v scripts/test_stage_pages.py` and fix the named manifest, allowlist, identity, or publication assertion.
 

@@ -51,7 +51,7 @@ STAGES = (
     Stage("node-tests", "node --test spikes/001-mobile-web-audio-gate/tests/*.test.mjs", "README.md#node-tests"),
     Stage("enrollment-static-contract", "python3 -m unittest -v scripts/test_enrollment_static_contract.py", "README.md#enrollment-and-pages-stages"),
     Stage("enrollment-module-import", shlex.join(ENROLLMENT_IMPORT_COMMAND), "README.md#enrollment-and-pages-stages"),
-    Stage("enrollment-node-tests", "node --test tools/m2-enrollment/tests/*.test.mjs", "README.md#enrollment-and-pages-stages"),
+    Stage("enrollment-node-tests", "node --test scripts/enrollment-download-artifacts.test.mjs tools/m2-enrollment/tests/*.test.mjs", "README.md#enrollment-and-pages-stages"),
     Stage("enrollment-browser-privacy", "node scripts/enrollment_browser_privacy_smoke.mjs", "README.md#enrollment-and-pages-stages"),
     Stage("pages-staging", "python3 -m unittest -v scripts/test_stage_pages.py", "README.md#enrollment-and-pages-stages"),
 )
@@ -133,11 +133,11 @@ def execute_stage(stage: Stage) -> tuple[bool, str]:
         return run_command(list(ENROLLMENT_IMPORT_COMMAND))
 
     if stage.stage_id == "enrollment-node-tests":
-        tests = sorted(
+        tests = ["scripts/enrollment-download-artifacts.test.mjs", *sorted(
             str(path.relative_to(REPO_ROOT))
             for path in (ENROLLMENT_ROOT / "tests").glob("*.test.mjs")
-        )
-        if not tests:
+        )]
+        if len(tests) == 1:
             return False, "no enrollment Node test files found"
         return run_command(["node", "--test", *tests])
 

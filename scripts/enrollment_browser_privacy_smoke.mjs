@@ -22,6 +22,11 @@ import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
+import {
+  ENROLLMENT_REPORT_FILENAME,
+  validateDownloadArtifactNames,
+} from './enrollment-download-artifacts.mjs';
+
 const CHROME_CANDIDATES = Object.freeze([
   '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
   '/usr/bin/google-chrome',
@@ -34,6 +39,7 @@ const COMMAND_TIMEOUT_MS = 5_000;
 const PAGE_TIMEOUT_MS = 20_000;
 const CHROME_START_TIMEOUT_MS = 12_000;
 const NETWORK_QUIET_MS = 150;
+const MAX_CHROME_AUXILIARY_DOWNLOAD_BYTES = 1_000_000;
 const PRIVATE_BYTE_SENTINEL = 'PRIVATE_BYTE_SENTINEL_DO_NOT_EXPOSE';
 const FIXTURE_PLAINTEXT_SENTINEL = 'PRIVATE_BYTE_SENTINEL_M2_ENROLLMENT_7F3A9C';
 const scriptDirectory = path.dirname(fileURLToPath(import.meta.url));
@@ -958,7 +964,7 @@ async function waitForDownload(cdp, action) {
   });
   await action();
   await bounded(completion, 'report download', PAGE_TIMEOUT_MS);
-  assert.equal(suggestedFilename, 'm2-enrollment-report.json');
+  assert.equal(suggestedFilename, ENROLLMENT_REPORT_FILENAME);
   return suggestedFilename;
 }
 
@@ -1108,6 +1114,7 @@ async function runSuccessScenario(cdp, pageUrl, sensitiveFixturePath, fixtureByt
     assertNoPrivateMaterial('downloaded report', downloadedJson);
     return {
       bootRequestCount: scenario.state.bootRequests.size,
+      downloadFilename: suggestedFilename,
       reportByteCount: Buffer.byteLength(reportJson),
     };
   } finally {
@@ -1246,7 +1253,25 @@ async function main() {
     );
 
     const downloadFiles = await readdir(downloadDirectory);
-    assert.deepEqual(downloadFiles, ['m2-enrollment-report.json']);
+    const auxiliaryDownloadFiles = validateDownloadArtifactNames(downloadFiles);
+    assertNoPrivateMaterial('download artifact names', downloadFiles);
+    for (const auxiliaryFilename of auxiliaryDownloadFiles) {
+      const auxiliaryPath = path.join(downloadDirectory, auxiliaryFilename);
+      const auxiliaryStat = await stat(auxiliaryPath);
+      assert.equal(auxiliaryStat.isFile(), true, 'Chrome auxiliary download was not a regular file');
+      requireCondition(
+        auxiliaryStat.size <= MAX_CHROME_AUXILIARY_DOWNLOAD_BYTES,
+        'Chrome auxiliary download exceeded the byte limit',
+      );
+      const auxiliaryBytes = await readFile(auxiliaryPath);
+      assertNoPrivateMaterial('Chrome auxiliary download', [
+        auxiliaryFilename,
+        auxiliaryBytes.toString('utf8'),
+        auxiliaryBytes.toString('hex'),
+        auxiliaryBytes.toString('base64'),
+      ]);
+    }
+    assert.equal(success.downloadFilename, ENROLLMENT_REPORT_FILENAME);
     requireCondition(staticServer.requests.length > 0, 'loopback server observed no startup requests');
 
     successOutput = [
