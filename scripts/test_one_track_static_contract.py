@@ -33,6 +33,7 @@ for (const [identifier, source] of Object.entries(sources)) {
     sourceType: 'module',
   });
   const staticSpecifiers = new Set();
+  const codeGenerationTokens = new Set();
   let hasDynamicImport = false;
   walk.simple(ast, {
     ImportDeclaration(node) {
@@ -49,10 +50,26 @@ for (const [identifier, source] of Object.entries(sources)) {
     ImportExpression() {
       hasDynamicImport = true;
     },
+    Identifier(node) {
+      if (node.name === 'eval' || node.name === 'Function') {
+        codeGenerationTokens.add(node.name);
+      }
+    },
+    MemberExpression(node) {
+      const propertyName = node.computed
+        ? (node.property.type === 'Literal' ? node.property.value : null)
+        : node.property.name;
+      if (propertyName === 'eval'
+          || propertyName === 'Function'
+          || propertyName === 'constructor') {
+        codeGenerationTokens.add(propertyName);
+      }
+    },
   });
   analyses[identifier] = {
     staticSpecifiers: [...staticSpecifiers],
     hasDynamicImport,
+    codeGenerationTokens: [...codeGenerationTokens],
   };
 }
 process.stdout.write(JSON.stringify(analyses));
@@ -208,6 +225,37 @@ export const futureTask = true;
                 )
                 self._assert_runtime_graph_fixture(fixture_root)
 
+    def test_runtime_code_generation_is_rejected(self):
+        rejected_statements = [
+            'const deferred = () => eval(\'import("node:fs")\');',
+            'const deferred = () => (0, eval)(\'import("node:fs")\');',
+            'const deferred = () => Function(\'return import("node:fs")\')();',
+            'const deferred = () => new Function(\'return import("node:fs")\')();',
+            'const deferred = () => globalThis.eval(\'import("node:fs")\');',
+            'const deferred = () => (() => {}).constructor(\'return import("node:fs")\')();',
+        ]
+        for statement in rejected_statements:
+            with self.subTest(statement=statement), tempfile.TemporaryDirectory() as temporary_directory:
+                fixture_root = self._copy_source_fixture(temporary_directory)
+                config_path = fixture_root / "config.mjs"
+                config_path.write_text(
+                    f"{statement}\n{config_path.read_text(encoding='utf-8')}",
+                    encoding="utf-8",
+                )
+                with self.assertRaises(AssertionError):
+                    self._assert_runtime_graph_fixture(fixture_root)
+
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            fixture_root = self._copy_source_fixture(temporary_directory)
+            config_path = fixture_root / "config.mjs"
+            config_path.write_text(
+                'const evaluation = "eval is forbidden";\n'
+                'const functional = evaluation.length;\n'
+                f"{config_path.read_text(encoding='utf-8')}",
+                encoding="utf-8",
+            )
+            self._assert_runtime_graph_fixture(fixture_root)
+
     def test_runtime_graph_contract(self):
         readme_path = PRODUCT_ROOT / "README.md"
         self.assertTrue(readme_path.is_file(), "independent product boundary README is missing")
@@ -253,6 +301,7 @@ export const futureTask = true;
             self.assertNotRegex(source, r"\bwindow\b|\bdocument\b|\bAudioContext\b|\bFile\b")
             analysis = module_analyses[relative_path]
             self.assertFalse(analysis["hasDynamicImport"], relative_path)
+            self.assertEqual(analysis["codeGenerationTokens"], [], relative_path)
             for import_path in analysis["staticSpecifiers"]:
                 self.assertTrue(import_path.startswith("."), (relative_path, import_path))
                 resolved = (SOURCE_ROOT / relative_path.parent / import_path).resolve()
