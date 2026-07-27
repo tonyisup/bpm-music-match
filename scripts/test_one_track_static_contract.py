@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-import re
+import json
 import shutil
 import subprocess
 import tempfile
@@ -19,20 +19,153 @@ REQUIRED_RUNTIME_MODULES = {
 }
 BUILD_PLACEHOLDER = "__BUILD_SHA__"
 STAGED_SHA = "0123456789abcdef0123456789abcdef01234567"
-STATIC_MODULE_SPECIFIER_PATTERN = re.compile(
-    r"(?:^|;)\s*(?:"
-    r"import\s+(?:[^;]*?\s+from\s+)?|"
-    r"export\s+(?:\*\s+(?:as\s+[A-Za-z_$][\w$]*\s+)?|\{[^;]*\}\s+)from\s+"
-    r")(?P<quote>['\"])(?P<specifier>[^'\"]+)(?P=quote)\s*(?=;|$)",
-    re.MULTILINE,
-)
+NODE_STATIC_DEPENDENCIES_SCRIPT = r"""
+import fs from 'node:fs';
+import vm from 'node:vm';
+
+const sources = JSON.parse(fs.readFileSync(0, 'utf8'));
+const dependencies = {};
+for (const [identifier, source] of Object.entries(sources)) {
+  const module = new vm.SourceTextModule(source, { identifier });
+  dependencies[identifier] = module.dependencySpecifiers;
+}
+process.stdout.write(JSON.stringify(dependencies));
+"""
 
 
-def static_module_specifiers(source: str) -> list[str]:
-    return [
-        match.group("specifier")
-        for match in STATIC_MODULE_SPECIFIER_PATTERN.finditer(source)
-    ]
+def static_module_specifiers(sources: dict[Path, str]) -> dict[Path, list[str]]:
+    serialized_sources = {
+        relative_path.as_posix(): source
+        for relative_path, source in sources.items()
+    }
+    result = subprocess.run(
+        [
+            "node",
+            "--no-warnings",
+            "--experimental-vm-modules",
+            "--input-type=module",
+            "--eval",
+            NODE_STATIC_DEPENDENCIES_SCRIPT,
+        ],
+        input=json.dumps(serialized_sources),
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    parsed = json.loads(result.stdout)
+    return {
+        Path(relative_path): specifiers
+        for relative_path, specifiers in parsed.items()
+    }
+
+
+def _is_identifier_character(character: str) -> bool:
+    return character.isalnum() or character in "_$"
+
+
+def _skip_quoted_literal(source: str, offset: int, quote: str) -> int:
+    offset += 1
+    while offset < len(source):
+        if source[offset] == "\\":
+            offset += 2
+        elif source[offset] == quote:
+            return offset + 1
+        else:
+            offset += 1
+    return offset
+
+
+def _skip_js_trivia(source: str, offset: int) -> int:
+    while offset < len(source):
+        if source[offset].isspace():
+            offset += 1
+        elif source.startswith("//", offset):
+            newline = source.find("\n", offset + 2)
+            offset = len(source) if newline == -1 else newline + 1
+        elif source.startswith("/*", offset):
+            closing = source.find("*/", offset + 2)
+            offset = len(source) if closing == -1 else closing + 2
+        else:
+            break
+    return offset
+
+
+def _scan_template_literal_for_dynamic_import(source: str, offset: int) -> tuple[bool, int]:
+    offset += 1
+    while offset < len(source):
+        if source[offset] == "\\":
+            offset += 2
+        elif source[offset] == "`":
+            return False, offset + 1
+        elif source.startswith("${", offset):
+            found, offset = _scan_code_for_dynamic_import(
+                source,
+                offset + 2,
+                stop_at_template_expression_end=True,
+            )
+            if found:
+                return True, offset
+        else:
+            offset += 1
+    return False, offset
+
+
+def _scan_code_for_dynamic_import(
+    source: str,
+    offset: int = 0,
+    *,
+    stop_at_template_expression_end: bool = False,
+) -> tuple[bool, int]:
+    brace_depth = 0
+    previous_token: str | None = None
+    while offset < len(source):
+        character = source[offset]
+        if character.isspace():
+            offset += 1
+            continue
+        if source.startswith("//", offset):
+            offset = _skip_js_trivia(source, offset)
+            continue
+        if source.startswith("/*", offset):
+            offset = _skip_js_trivia(source, offset)
+            continue
+        if character in "'\"":
+            offset = _skip_quoted_literal(source, offset, character)
+            previous_token = "literal"
+            continue
+        if character == "`":
+            found, offset = _scan_template_literal_for_dynamic_import(source, offset)
+            if found:
+                return True, offset
+            previous_token = "literal"
+            continue
+        if character.isalpha() or character in "_$":
+            end = offset + 1
+            while end < len(source) and _is_identifier_character(source[end]):
+                end += 1
+            identifier = source[offset:end]
+            if identifier == "import" and previous_token != ".":
+                following = _skip_js_trivia(source, end)
+                if following < len(source) and source[following] == "(":
+                    return True, following
+            previous_token = identifier
+            offset = end
+            continue
+        if stop_at_template_expression_end:
+            if character == "{":
+                brace_depth += 1
+            elif character == "}":
+                if brace_depth == 0:
+                    return False, offset + 1
+                brace_depth -= 1
+        previous_token = character
+        offset += 1
+    return False, offset
+
+
+def contains_dynamic_import(source: str) -> bool:
+    found, _ = _scan_code_for_dynamic_import(source)
+    return found
 
 
 class OneTrackStaticContractTests(unittest.TestCase):
@@ -125,6 +258,39 @@ export const futureTask = true;
                 with self.assertRaises(AssertionError):
                     self._assert_runtime_graph_fixture(fixture_root)
 
+    def test_comment_trivia_cannot_hide_dependency_edges(self):
+        rejected_statements = [
+            'import /* boundary bypass */ "node:fs";',
+            'const deferred = () => import /* boundary bypass */ ("node:fs");',
+            'export /* boundary bypass */ { readFile } from "node:fs";',
+            'const deferred = () => `${import /* boundary bypass */ ("node:fs")}`;',
+        ]
+        for statement in rejected_statements:
+            with self.subTest(statement=statement), tempfile.TemporaryDirectory() as temporary_directory:
+                fixture_root = self._copy_source_fixture(temporary_directory)
+                config_path = fixture_root / "config.mjs"
+                config_path.write_text(
+                    f"{statement}\n{config_path.read_text(encoding='utf-8')}",
+                    encoding="utf-8",
+                )
+                with self.assertRaises(AssertionError):
+                    self._assert_runtime_graph_fixture(fixture_root)
+
+        accepted_statements = [
+            'const stringLiteral = "import /* not code */ (\\"node:fs\\")";',
+            '// import /* not code */ ("node:fs")',
+            'const templateText = `import /* not code */ ("node:fs")`;',
+        ]
+        for statement in accepted_statements:
+            with self.subTest(statement=statement), tempfile.TemporaryDirectory() as temporary_directory:
+                fixture_root = self._copy_source_fixture(temporary_directory)
+                config_path = fixture_root / "config.mjs"
+                config_path.write_text(
+                    f"{statement}\n{config_path.read_text(encoding='utf-8')}",
+                    encoding="utf-8",
+                )
+                self._assert_runtime_graph_fixture(fixture_root)
+
     def test_runtime_graph_contract(self):
         readme_path = PRODUCT_ROOT / "README.md"
         self.assertTrue(readme_path.is_file(), "independent product boundary README is missing")
@@ -163,12 +329,13 @@ export const futureTask = true;
             relative_path: (SOURCE_ROOT / relative_path).read_text(encoding="utf-8")
             for relative_path in runtime_paths
         }
+        static_dependencies = static_module_specifiers(sources)
         for relative_path, source in sources.items():
             self.assertEqual(source.count(BUILD_PLACEHOLDER), 1, relative_path)
             self.assertNotRegex(source, r"\bfetch\s*\(|\bXMLHttpRequest\b|https?://")
             self.assertNotRegex(source, r"\bwindow\b|\bdocument\b|\bAudioContext\b|\bFile\b")
-            self.assertNotRegex(source, r"import\s*\(")
-            for import_path in static_module_specifiers(source):
+            self.assertFalse(contains_dynamic_import(source), relative_path)
+            for import_path in static_dependencies[relative_path]:
                 self.assertTrue(import_path.startswith("."), (relative_path, import_path))
                 resolved = (SOURCE_ROOT / relative_path.parent / import_path).resolve()
                 self.assertTrue(resolved.is_relative_to(SOURCE_ROOT.resolve()))
