@@ -69,6 +69,39 @@ function assertRecursivelyFrozen(value) {
   }
 }
 
+function accessorRecord(values, counter) {
+  return Object.defineProperties({}, Object.fromEntries(
+    Object.entries(values).map(([key, value]) => [key, {
+      enumerable: true,
+      configurable: true,
+      get() {
+        counter.count += 1;
+        return value;
+      },
+    }]),
+  ));
+}
+
+function assertClosedOrdinaryRecord(validator, values, reviewedFrozenExport) {
+  assert.equal(validator({ ...values }), true);
+  assert.equal(validator(Object.assign(Object.create(null), values)), true);
+  assert.equal(validator(reviewedFrozenExport), true);
+
+  const symbolExtra = { ...values, [Symbol('extra')]: true };
+  assert.throws(() => validator(symbolExtra), TypeError);
+
+  const nonEnumerableExtra = { ...values };
+  Object.defineProperty(nonEnumerableExtra, 'extra', { value: true });
+  assert.throws(() => validator(nonEnumerableExtra), TypeError);
+
+  const customPrototype = Object.assign(Object.create({ inherited: true }), values);
+  assert.throws(() => validator(customPrototype), TypeError);
+
+  const getterCounter = { count: 0 };
+  assert.throws(() => validator(accessorRecord(values, getterCounter)), TypeError);
+  assert.equal(getterCounter.count, 0);
+}
+
 test('T1-CONFIG-CLOSED locks the sanitized fixture and experiment identities', () => {
   assert.deepEqual(TRACK_METADATA_KEYS, Object.keys(METADATA));
   assert.deepEqual(Object.keys(TRACK_METADATA), TRACK_METADATA_KEYS);
@@ -155,8 +188,8 @@ test('T1-CONFIG-CLOSED locks the sanitized fixture and experiment identities', (
   });
   assertRecursivelyFrozen(ONE_TRACK_CONTRACT);
 
-  assert.equal(assertClosedTrackMetadata({ ...METADATA }), true);
-  assert.equal(assertClosedOneTrackConfig({ ...CONFIG }), true);
+  assertClosedOrdinaryRecord(assertClosedTrackMetadata, METADATA, TRACK_METADATA);
+  assertClosedOrdinaryRecord(assertClosedOneTrackConfig, CONFIG, ONE_TRACK_CONFIG);
   assert.throws(
     () => assertClosedTrackMetadata({ ...METADATA, selectedFilename: 'private.mp3' }),
     /closed key set/,
@@ -222,7 +255,11 @@ test('T1-RUN-CONTEXT derives and advances only the fixed seven-run protocol', as
     );
 
     const frozen = runContext.freezeColdContextAtFirstAcceptedTap(cold);
+    const repeatedFreeze = runContext.freezeColdContextAtFirstAcceptedTap(cold);
+    const frozenDerivative = runContext.freezeColdContextAtFirstAcceptedTap(frozen);
     assert.notEqual(frozen, cold);
+    assert.equal(repeatedFreeze, frozen);
+    assert.equal(frozenDerivative, frozen);
     assert.equal(cold.contextFrozenAtFirstAcceptedTap, false);
     assert.equal(frozen.contextFrozenAtFirstAcceptedTap, true);
     assert.equal(Object.isFrozen(frozen), true);
@@ -256,6 +293,22 @@ test('T1-RUN-CONTEXT derives and advances only the fixed seven-run protocol', as
       contextFrozenAtFirstAcceptedTap: false,
     });
     assert.equal(Object.isFrozen(warmed), true);
+    assert.throws(
+      () => runContext.advanceRunContext(repeatedFreeze, {
+        evidenceResolved: true,
+        downloadGesture: true,
+        reset: true,
+      }),
+      /already advanced/,
+    );
+    assert.throws(
+      () => runContext.advanceRunContext(frozenDerivative, {
+        evidenceResolved: true,
+        downloadGesture: true,
+        reset: true,
+      }),
+      /already advanced/,
+    );
     assert.throws(
       () => runContext.advanceRunContext(warmed, {
         evidenceResolved: true,

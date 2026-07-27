@@ -65,23 +65,37 @@ function deepFreeze(value) {
   return Object.freeze(value);
 }
 
-function assertClosedKeys(candidate, allowedKeys) {
+function assertClosedRecord(candidate, allowedKeys) {
   if (candidate === null || typeof candidate !== 'object' || Array.isArray(candidate)) {
     throw new TypeError('one-track config must be a record with the closed key set');
   }
-  const keys = Object.keys(candidate);
-  if (keys.length !== allowedKeys.length || keys.some((key) => !allowedKeys.includes(key))) {
+  const prototype = Object.getPrototypeOf(candidate);
+  if (prototype !== Object.prototype && prototype !== null) {
+    throw new TypeError('one-track config must use the closed key set on an ordinary record');
+  }
+  const keys = Reflect.ownKeys(candidate);
+  if (keys.length !== allowedKeys.length
+      || keys.some((key) => typeof key !== 'string' || !allowedKeys.includes(key))) {
     throw new TypeError('one-track config must use the closed key set');
   }
+  const descriptors = Object.getOwnPropertyDescriptors(candidate);
+  if (allowedKeys.some((key) => {
+    const descriptor = descriptors[key];
+    return descriptor.enumerable !== true || !Object.hasOwn(descriptor, 'value');
+  })) {
+    throw new TypeError('one-track config must use own enumerable data properties');
+  }
+  return descriptors;
 }
 
 export function assertClosedOneTrackConfig(candidate) {
-  assertClosedKeys(candidate, ONE_TRACK_CONFIG_KEYS);
+  const descriptors = assertClosedRecord(candidate, ONE_TRACK_CONFIG_KEYS);
   for (const key of ONE_TRACK_CONFIG_KEYS) {
-    if (typeof EXPECTED_CONFIG[key] === 'number' && !Number.isFinite(candidate[key])) {
+    const value = descriptors[key].value;
+    if (typeof EXPECTED_CONFIG[key] === 'number' && !Number.isFinite(value)) {
       throw new TypeError(`${key} must be finite`);
     }
-    if (!Object.is(candidate[key], EXPECTED_CONFIG[key])) {
+    if (!Object.is(value, EXPECTED_CONFIG[key])) {
       throw new TypeError(`${key} must equal the locked config value`);
     }
   }

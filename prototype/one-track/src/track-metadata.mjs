@@ -46,28 +46,42 @@ const EXPECTED_TRACK_METADATA = Object.freeze({
   browserHeapObserved: false,
 });
 
-function assertClosedKeys(candidate, allowedKeys, label) {
+function assertClosedRecord(candidate, allowedKeys, label) {
   if (candidate === null || typeof candidate !== 'object' || Array.isArray(candidate)) {
     throw new TypeError(`${label} must be a record with the closed key set`);
   }
-  const keys = Object.keys(candidate);
-  if (keys.length !== allowedKeys.length || keys.some((key) => !allowedKeys.includes(key))) {
+  const prototype = Object.getPrototypeOf(candidate);
+  if (prototype !== Object.prototype && prototype !== null) {
+    throw new TypeError(`${label} must use the closed key set on an ordinary record`);
+  }
+  const keys = Reflect.ownKeys(candidate);
+  if (keys.length !== allowedKeys.length
+      || keys.some((key) => typeof key !== 'string' || !allowedKeys.includes(key))) {
     throw new TypeError(`${label} must use the closed key set`);
   }
+  const descriptors = Object.getOwnPropertyDescriptors(candidate);
+  if (allowedKeys.some((key) => {
+    const descriptor = descriptors[key];
+    return descriptor.enumerable !== true || !Object.hasOwn(descriptor, 'value');
+  })) {
+    throw new TypeError(`${label} must use own enumerable data properties`);
+  }
+  return descriptors;
 }
 
 export function assertClosedTrackMetadata(candidate) {
-  assertClosedKeys(candidate, TRACK_METADATA_KEYS, 'track metadata');
+  const descriptors = assertClosedRecord(candidate, TRACK_METADATA_KEYS, 'track metadata');
   for (const key of TRACK_METADATA_KEYS) {
-    if (typeof EXPECTED_TRACK_METADATA[key] === 'number' && !Number.isFinite(candidate[key])) {
+    const value = descriptors[key].value;
+    if (typeof EXPECTED_TRACK_METADATA[key] === 'number' && !Number.isFinite(value)) {
       throw new TypeError(`${key} must be finite`);
     }
-    if (!Object.is(candidate[key], EXPECTED_TRACK_METADATA[key])) {
+    if (!Object.is(value, EXPECTED_TRACK_METADATA[key])) {
       throw new TypeError(`${key} must equal the locked sanitized value`);
     }
   }
-  if (candidate.decodedFrameCount * candidate.decodedChannelCount * 4
-      !== candidate.calculatedDecodedPcmBytes) {
+  if (descriptors.decodedFrameCount.value * descriptors.decodedChannelCount.value * 4
+      !== descriptors.calculatedDecodedPcmBytes.value) {
     throw new TypeError('calculatedDecodedPcmBytes must equal decodedFrameCount × decodedChannelCount × 4');
   }
   return true;

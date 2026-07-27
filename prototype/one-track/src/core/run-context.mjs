@@ -7,6 +7,7 @@ export function assertLocalBuildIdentity() {
 }
 
 const RUN_CONTEXTS = new WeakSet();
+const RUN_LINEAGES = new WeakMap();
 
 function deepFreeze(value) {
   for (const child of Object.values(value)) {
@@ -48,7 +49,12 @@ export const RUN_TABLE = deepFreeze({
 
 export const RUN_VALUES = Object.freeze(Object.keys(RUN_TABLE));
 
-function createContext(runValue, thermalState, contextFrozenAtFirstAcceptedTap = false) {
+function createContext(
+  runValue,
+  thermalState,
+  contextFrozenAtFirstAcceptedTap = false,
+  lineage = { frozenContext: null, consumed: false },
+) {
   const row = RUN_TABLE[runValue];
   const isSmoke = runValue.startsWith('smoke-');
   const assignment = isSmoke ? null : row[thermalState];
@@ -64,6 +70,7 @@ function createContext(runValue, thermalState, contextFrozenAtFirstAcceptedTap =
     contextFrozenAtFirstAcceptedTap,
   });
   RUN_CONTEXTS.add(context);
+  RUN_LINEAGES.set(context, lineage);
   return context;
 }
 
@@ -87,7 +94,11 @@ export function freezeColdContextAtFirstAcceptedTap(context) {
   if (context.contextFrozenAtFirstAcceptedTap) {
     return context;
   }
-  return createContext(context.runValue, 'cold', true);
+  const lineage = RUN_LINEAGES.get(context);
+  if (lineage.frozenContext === null) {
+    lineage.frozenContext = createContext(context.runValue, 'cold', true, lineage);
+  }
+  return lineage.frozenContext;
 }
 
 export function advanceRunContext(context, gate) {
@@ -108,5 +119,10 @@ export function advanceRunContext(context, gate) {
       'run advancement requires resolved cold evidence, explicit download gesture, and Reset',
     );
   }
-  return createContext(context.runValue, 'warmed');
+  const lineage = RUN_LINEAGES.get(context);
+  if (lineage.consumed) {
+    throw new TypeError('run context lineage has already advanced');
+  }
+  lineage.consumed = true;
+  return createContext(context.runValue, 'warmed', false, lineage);
 }
