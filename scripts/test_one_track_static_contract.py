@@ -12,12 +12,49 @@ from typing import Any
 REPO_ROOT = Path(__file__).resolve().parents[1]
 PRODUCT_ROOT = REPO_ROOT / "prototype" / "one-track"
 SOURCE_ROOT = PRODUCT_ROOT / "src"
-REQUIRED_RUNTIME_MODULES = {
+TASK1_REQUIRED_RUNTIME_MODULES = {
     Path("build-identity.mjs"),
     Path("config.mjs"),
     Path("track-metadata.mjs"),
     Path("core/run-context.mjs"),
 }
+PLANNED_SOURCE_MODULES = {
+    Path("build-identity.mjs"),
+    Path("config.mjs"),
+    Path("track-metadata.mjs"),
+    Path("core/run-context.mjs"),
+    Path("core/tap-estimator.mjs"),
+    Path("core/handoff-planner.mjs"),
+    Path("core/effects.mjs"),
+    Path("core/session-reducer.mjs"),
+    Path("core/evidence-schema.mjs"),
+    Path("replay/replay-session.mjs"),
+    Path("audio/audio-math.mjs"),
+    Path("audio/percussion-buffer.mjs"),
+    Path("audio/offline-handoff-renderer.mjs"),
+    Path("audio/web-audio-engine.mjs"),
+    Path("browser/local-track-loader.mjs"),
+    Path("browser/loaded-session.mjs"),
+    Path("browser/clock-adapter.mjs"),
+    Path("browser/coordinator.mjs"),
+    Path("browser/renderer.mjs"),
+    Path("browser/main.mjs"),
+}
+NON_STAGED_SOURCE_MODULES = {
+    Path("replay/replay-session.mjs"),
+    Path("audio/offline-handoff-renderer.mjs"),
+}
+STAGED_RUNTIME_MODULES = PLANNED_SOURCE_MODULES - NON_STAGED_SOURCE_MODULES
+BROWSER_BOUNDARY_MODULES = {
+    Path("audio/web-audio-engine.mjs"),
+    Path("browser/local-track-loader.mjs"),
+    Path("browser/loaded-session.mjs"),
+    Path("browser/clock-adapter.mjs"),
+    Path("browser/coordinator.mjs"),
+    Path("browser/renderer.mjs"),
+    Path("browser/main.mjs"),
+}
+PURE_RUNTIME_MODULES = PLANNED_SOURCE_MODULES - BROWSER_BOUNDARY_MODULES
 BUILD_PLACEHOLDER = "__BUILD_SHA__"
 STAGED_SHA = "0123456789abcdef0123456789abcdef01234567"
 NODE_MODULE_ANALYSIS_SCRIPT = r"""
@@ -26,6 +63,32 @@ const acorn = require('internal/deps/acorn/acorn/dist/acorn');
 const walk = require('internal/deps/acorn/acorn-walk/dist/walk');
 
 const sources = JSON.parse(fs.readFileSync(0, 'utf8'));
+const networkIdentifiers = new Set([
+  'fetch',
+  'XMLHttpRequest',
+  'WebSocket',
+  'EventSource',
+  'WebTransport',
+  'RTCPeerConnection',
+  'Worker',
+  'SharedWorker',
+]);
+const networkMembers = new Set(['sendBeacon', 'serviceWorker']);
+const browserIdentifiers = new Set([
+  'window',
+  'document',
+  'navigator',
+  'AudioContext',
+  'OfflineAudioContext',
+  'File',
+  'FileReader',
+  'Blob',
+  'performance',
+  'setTimeout',
+  'setInterval',
+  'requestAnimationFrame',
+  ...networkIdentifiers,
+]);
 const analyses = {};
 for (const [identifier, source] of Object.entries(sources)) {
   const ast = acorn.parse(source, {
@@ -34,6 +97,8 @@ for (const [identifier, source] of Object.entries(sources)) {
   });
   const staticSpecifiers = new Set();
   const codeGenerationTokens = new Set();
+  const networkCapabilities = new Set();
+  const browserCapabilities = new Set();
   let hasDynamicImport = false;
   walk.simple(ast, {
     ImportDeclaration(node) {
@@ -54,6 +119,12 @@ for (const [identifier, source] of Object.entries(sources)) {
       if (node.name === 'eval' || node.name === 'Function') {
         codeGenerationTokens.add(node.name);
       }
+      if (networkIdentifiers.has(node.name)) {
+        networkCapabilities.add(node.name);
+      }
+      if (browserIdentifiers.has(node.name)) {
+        browserCapabilities.add(node.name);
+      }
     },
     MemberExpression(node) {
       const propertyName = node.computed
@@ -64,12 +135,17 @@ for (const [identifier, source] of Object.entries(sources)) {
           || propertyName === 'constructor') {
         codeGenerationTokens.add(propertyName);
       }
+      if (networkMembers.has(propertyName)) {
+        networkCapabilities.add(propertyName);
+      }
     },
   });
   analyses[identifier] = {
     staticSpecifiers: [...staticSpecifiers],
     hasDynamicImport,
     codeGenerationTokens: [...codeGenerationTokens],
+    networkCapabilities: [...networkCapabilities],
+    browserCapabilities: [...browserCapabilities],
   };
 }
 process.stdout.write(JSON.stringify(analyses));
@@ -120,23 +196,33 @@ class OneTrackStaticContractTests(unittest.TestCase):
         source = path.read_text(encoding="utf-8")
         path.write_text(f'import "{specifier}";\n{source}', encoding="utf-8")
 
-    def test_future_runtime_module_is_discovered_accepted_and_checked(self):
-        with tempfile.TemporaryDirectory() as temporary_directory:
-            fixture_root = self._copy_source_fixture(temporary_directory)
-            future_module = fixture_root / "future-task.mjs"
-            future_module.write_text(
-                """import { assertBuildIdentity } from './build-identity.mjs';
+    @staticmethod
+    def _write_staged_fixture_module(fixture_root: Path, relative_path: Path, body: str) -> Path:
+        module_path = fixture_root / relative_path
+        module_path.parent.mkdir(parents=True, exist_ok=True)
+        build_identity_path = Path("../" * len(relative_path.parent.parts)) / "build-identity.mjs"
+        module_path.write_text(
+            f"""import {{ assertBuildIdentity }} from '{build_identity_path.as_posix()}';
 
 const LOCAL_BUILD_SHA = '__BUILD_SHA__';
 
-function assertFutureBuildIdentity() {
+export function assertLocalBuildIdentity() {{
   return assertBuildIdentity(LOCAL_BUILD_SHA);
-}
+}}
 
-assertFutureBuildIdentity();
-export const futureTask = true;
+{body}
 """,
-                encoding="utf-8",
+            encoding="utf-8",
+        )
+        return module_path
+
+    def test_future_runtime_module_is_discovered_accepted_and_checked(self):
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            fixture_root = self._copy_source_fixture(temporary_directory)
+            future_module = self._write_staged_fixture_module(
+                fixture_root,
+                Path("core/tap-estimator.mjs"),
+                "export const futureTask = true;",
             )
             self._assert_runtime_graph_fixture(fixture_root)
 
@@ -256,6 +342,70 @@ export const futureTask = true;
             )
             self._assert_runtime_graph_fixture(fixture_root)
 
+    def test_network_capabilities_are_rejected_in_every_runtime_module(self):
+        bodies = [
+            "export function leak(payload) { return navigator.sendBeacon('/leak', payload); }",
+            "export function connect() { return new WebSocket('/socket'); }",
+            "export function stream() { return new EventSource('/events'); }",
+            "export function transport() { return new WebTransport('/transport'); }",
+        ]
+        for body in bodies:
+            with self.subTest(body=body), tempfile.TemporaryDirectory() as temporary_directory:
+                fixture_root = self._copy_source_fixture(temporary_directory)
+                self._write_staged_fixture_module(
+                    fixture_root,
+                    Path("browser/coordinator.mjs"),
+                    body,
+                )
+                with self.assertRaises(AssertionError):
+                    self._assert_runtime_graph_fixture(fixture_root)
+
+    def test_browser_boundaries_are_allowed_while_core_remains_pure(self):
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            fixture_root = self._copy_source_fixture(temporary_directory)
+            self._write_staged_fixture_module(
+                fixture_root,
+                Path("browser/local-track-loader.mjs"),
+                "export function accepts(file) { return file instanceof File; }",
+            )
+            self._write_staged_fixture_module(
+                fixture_root,
+                Path("audio/web-audio-engine.mjs"),
+                "export function createContext() { return new AudioContext(); }",
+            )
+            self._assert_runtime_graph_fixture(fixture_root)
+
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            fixture_root = self._copy_source_fixture(temporary_directory)
+            self._write_staged_fixture_module(
+                fixture_root,
+                Path("core/tap-estimator.mjs"),
+                "export function invalid(file) { return file instanceof File; }",
+            )
+            with self.assertRaises(AssertionError):
+                self._assert_runtime_graph_fixture(fixture_root)
+
+    def test_planned_source_graph_distinguishes_staged_and_test_only_modules(self):
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            fixture_root = self._copy_source_fixture(temporary_directory)
+            replay_module = fixture_root / "replay/replay-session.mjs"
+            replay_module.parent.mkdir(parents=True, exist_ok=True)
+            replay_module.write_text(
+                "export function replaySession(state) { return state; }\n",
+                encoding="utf-8",
+            )
+            self._assert_runtime_graph_fixture(fixture_root)
+
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            fixture_root = self._copy_source_fixture(temporary_directory)
+            self._write_staged_fixture_module(
+                fixture_root,
+                Path("unknown-module.mjs"),
+                "export const unknown = true;",
+            )
+            with self.assertRaises(AssertionError):
+                self._assert_runtime_graph_fixture(fixture_root)
+
     def test_runtime_graph_contract(self):
         readme_path = PRODUCT_ROOT / "README.md"
         self.assertTrue(readme_path.is_file(), "independent product boundary README is missing")
@@ -285,10 +435,15 @@ export const futureTask = true;
             for path in SOURCE_ROOT.rglob("*.mjs")
         }
         self.assertTrue(
-            REQUIRED_RUNTIME_MODULES.issubset(runtime_paths),
+            TASK1_REQUIRED_RUNTIME_MODULES.issubset(runtime_paths),
             f"missing required Task 1 runtime modules: "
-            f"{REQUIRED_RUNTIME_MODULES - runtime_paths}",
+            f"{TASK1_REQUIRED_RUNTIME_MODULES - runtime_paths}",
         )
+        self.assertTrue(
+            runtime_paths.issubset(PLANNED_SOURCE_MODULES),
+            f"unplanned source modules: {runtime_paths - PLANNED_SOURCE_MODULES}",
+        )
+        staged_paths = runtime_paths & STAGED_RUNTIME_MODULES
 
         sources = {
             relative_path: (SOURCE_ROOT / relative_path).read_text(encoding="utf-8")
@@ -296,18 +451,32 @@ export const futureTask = true;
         }
         module_analyses = analyze_runtime_modules(sources)
         for relative_path, source in sources.items():
-            self.assertEqual(source.count(BUILD_PLACEHOLDER), 1, relative_path)
-            self.assertNotRegex(source, r"\bfetch\s*\(|\bXMLHttpRequest\b|https?://")
-            self.assertNotRegex(source, r"\bwindow\b|\bdocument\b|\bAudioContext\b|\bFile\b")
+            expected_placeholder_count = 1 if relative_path in staged_paths else 0
+            self.assertEqual(
+                source.count(BUILD_PLACEHOLDER),
+                expected_placeholder_count,
+                relative_path,
+            )
             analysis = module_analyses[relative_path]
             self.assertFalse(analysis["hasDynamicImport"], relative_path)
             self.assertEqual(analysis["codeGenerationTokens"], [], relative_path)
+            self.assertEqual(analysis["networkCapabilities"], [], relative_path)
+            if relative_path in PURE_RUNTIME_MODULES:
+                self.assertEqual(analysis["browserCapabilities"], [], relative_path)
             for import_path in analysis["staticSpecifiers"]:
                 self.assertTrue(import_path.startswith("."), (relative_path, import_path))
                 resolved = (SOURCE_ROOT / relative_path.parent / import_path).resolve()
                 self.assertTrue(resolved.is_relative_to(SOURCE_ROOT.resolve()))
                 self.assertTrue(resolved.is_file(), (relative_path, import_path))
                 self.assertEqual(resolved.suffix, ".mjs", (relative_path, import_path))
+                resolved_relative = resolved.relative_to(SOURCE_ROOT.resolve())
+                self.assertIn(resolved_relative, runtime_paths, (relative_path, import_path))
+                if relative_path in staged_paths:
+                    self.assertIn(
+                        resolved_relative,
+                        staged_paths,
+                        f"staged module {relative_path} imports non-staged {resolved_relative}",
+                    )
             for protected in [
                 "spikes/001-mobile-web-audio-gate",
                 "tools/m2-enrollment",
@@ -323,7 +492,7 @@ export const futureTask = true;
             1,
         )
         self.assertEqual(identity.count("assertBuildIdentity(BUILD_SHA)"), 1)
-        for relative_path in runtime_paths - {Path("build-identity.mjs")}:
+        for relative_path in staged_paths - {Path("build-identity.mjs")}:
             source = sources[relative_path]
             self.assertEqual(source.count("const LOCAL_BUILD_SHA = '__BUILD_SHA__';"), 1)
             self.assertEqual(source.count("assertBuildIdentity(LOCAL_BUILD_SHA)"), 1)
@@ -343,7 +512,7 @@ export const futureTask = true;
         with tempfile.TemporaryDirectory() as temporary_directory:
             staged_root = Path(temporary_directory) / "src"
             shutil.copytree(SOURCE_ROOT, staged_root)
-            for relative_path in runtime_paths:
+            for relative_path in staged_paths:
                 path = staged_root / relative_path
                 source = path.read_text(encoding="utf-8")
                 self.assertEqual(source.count(BUILD_PLACEHOLDER), 1, relative_path)
@@ -351,7 +520,7 @@ export const futureTask = true;
 
             module_specifiers = [
                 f"./src/{relative_path.as_posix()}"
-                for relative_path in sorted(runtime_paths)
+                for relative_path in sorted(staged_paths)
             ]
             script = f"""
               import * as identity from './src/build-identity.mjs';
