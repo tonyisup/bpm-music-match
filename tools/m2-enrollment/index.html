@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'none'; media-src 'none'; object-src 'none'; worker-src 'none'; form-action 'none'; base-uri 'none'">
+  <title>Private track enrollment</title>
+  <link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+  <main>
+    <header class="page-header">
+      <p class="product-label">Local enrollment utility</p>
+      <h1>Enroll the reference track</h1>
+      <p>Select the same local MP3 for two complete load and unload cycles. The file is processed only in this page.</p>
+    </header>
+
+    <p id="status" class="status" role="status" aria-live="polite" aria-atomic="true">Ready for the first selection.</p>
+
+    <section aria-labelledby="asset-heading">
+      <div class="section-heading">
+        <h2 id="asset-heading">Select and verify</h2>
+        <p id="cycle-count">Completed unload cycles: 0 of 2</p>
+      </div>
+
+      <div class="field">
+        <label for="track-file">Reference track MP3</label>
+        <input id="track-file" type="file" accept=".mp3,audio/mpeg" aria-describedby="file-help">
+        <p id="file-help" class="help">Chrome must report the selected file as audio/mpeg. The picker filter is only a hint.</p>
+      </div>
+
+      <button id="cancel-load" type="button" disabled>Cancel load</button>
+    </section>
+
+    <section aria-labelledby="cue-heading">
+      <div class="section-heading">
+        <h2 id="cue-heading">Set the downbeat</h2>
+        <p>Preview uses Raw Web Audio. No media element or object URL is created.</p>
+      </div>
+
+      <div class="field">
+        <label for="downbeat-seconds">Target entry downbeat in seconds</label>
+        <input id="downbeat-seconds" type="number" inputmode="decimal" min="0" step="0.001" value="2.200" disabled>
+      </div>
+
+      <div class="control-grid" aria-label="Raw Web Audio preview controls">
+        <button id="play-preview" type="button" disabled>Play preview</button>
+        <button id="stop-preview" type="button" disabled>Stop preview</button>
+        <button id="use-preview-time" type="button" disabled>Use preview time</button>
+        <button id="analyze-cue" type="button" disabled>Analyze cue</button>
+      </div>
+
+      <div class="confirmation">
+        <input id="confirm-bpm" type="checkbox">
+        <label for="confirm-bpm">I confirm the configured 110 BPM</label>
+      </div>
+
+      <button id="unload-track" class="primary" type="button" disabled>Unload</button>
+    </section>
+
+    <section aria-labelledby="report-heading">
+      <div class="section-heading">
+        <h2 id="report-heading">Sanitized fixture report</h2>
+        <p>Unlocks after two matching clean unload cycles and explicit BPM confirmation.</p>
+      </div>
+
+      <div class="control-grid">
+        <button id="copy-report" type="button" disabled>Copy report</button>
+        <button id="download-report" type="button" disabled>Download report</button>
+      </div>
+      <pre id="report-output" aria-live="off">Report locked.</pre>
+    </section>
+
+    <p class="memory-note">Two clean cycles prove application-owned references were cleared and audio contexts closed. Browser heap release is not observed.</p>
+  </main>
+  <script type="module" src="./app.mjs"></script>
+</body>
+</html>
