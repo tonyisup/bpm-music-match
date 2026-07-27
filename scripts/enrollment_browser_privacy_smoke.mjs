@@ -837,6 +837,10 @@ async function runUnloadTeardownFailureScenario(cdp, pageUrl, sensitiveFixturePa
   try {
     await setFileInput(cdp, scenario, sensitiveFixturePath);
     await waitForStatus(cdp, scenario, 'Track ready.');
+    await click(cdp, scenario, '#play-preview');
+    await waitForStatus(cdp, scenario, 'preview is playing');
+    await click(cdp, scenario, '#stop-preview');
+    await waitForStatus(cdp, scenario, 'Preview stopped');
     await click(cdp, scenario, '#analyze-cue');
     await waitForStatus(cdp, scenario, 'Cue window passed');
     await click(cdp, scenario, '#unload-track');
@@ -859,6 +863,10 @@ async function runUnloadTeardownFailureScenario(cdp, pageUrl, sensitiveFixturePa
 async function preparePendingMismatchTeardown(cdp, scenario, firstPath, mismatchPath) {
   await setFileInput(cdp, scenario, firstPath);
   await waitForStatus(cdp, scenario, 'Track ready.');
+  await click(cdp, scenario, '#play-preview');
+  await waitForStatus(cdp, scenario, 'preview is playing');
+  await click(cdp, scenario, '#stop-preview');
+  await waitForStatus(cdp, scenario, 'Preview stopped');
   await click(cdp, scenario, '#analyze-cue');
   await waitForStatus(cdp, scenario, 'Cue window passed');
   await click(cdp, scenario, '#unload-track');
@@ -954,17 +962,15 @@ async function waitForDownload(cdp, action) {
   return suggestedFilename;
 }
 
-async function completeTwoCycleReport(cdp, scenario, sensitiveFixturePath, { exercisePreview = false } = {}) {
+async function completeTwoCycleReport(cdp, scenario, sensitiveFixturePath) {
   await setFileInput(cdp, scenario, sensitiveFixturePath);
   await waitForStatus(cdp, scenario, 'Track ready.');
-  if (exercisePreview) {
-    await click(cdp, scenario, '#play-preview');
-    await waitForStatus(cdp, scenario, 'preview is playing');
-    await click(cdp, scenario, '#use-preview-time');
-    await waitForStatus(cdp, scenario, 'Preview time copied');
-    await click(cdp, scenario, '#stop-preview');
-    await waitForStatus(cdp, scenario, 'Preview stopped');
-  }
+  await click(cdp, scenario, '#play-preview');
+  await waitForStatus(cdp, scenario, 'preview is playing');
+  await click(cdp, scenario, '#use-preview-time');
+  await waitForStatus(cdp, scenario, 'Preview time copied');
+  await click(cdp, scenario, '#stop-preview');
+  await waitForStatus(cdp, scenario, 'Preview stopped');
   await click(cdp, scenario, '#analyze-cue');
   await waitForStatus(cdp, scenario, 'Cue window passed');
   await click(cdp, scenario, '#unload-track');
@@ -972,6 +978,14 @@ async function completeTwoCycleReport(cdp, scenario, sensitiveFixturePath, { exe
 
   await setFileInput(cdp, scenario, sensitiveFixturePath);
   await waitForStatus(cdp, scenario, 'Track ready.');
+  await click(cdp, scenario, '#play-preview');
+  await waitForStatus(cdp, scenario, 'preview is playing');
+  await click(cdp, scenario, '#use-preview-time');
+  await waitForStatus(cdp, scenario, 'Preview time copied');
+  await click(cdp, scenario, '#stop-preview');
+  await waitForStatus(cdp, scenario, 'Preview stopped');
+  await click(cdp, scenario, '#analyze-cue');
+  await waitForStatus(cdp, scenario, 'Cue window passed');
   await click(cdp, scenario, '#unload-track');
   await waitForStatus(cdp, scenario, 'Two matching clean cycles completed');
   await click(cdp, scenario, '#confirm-bpm');
@@ -1060,12 +1074,7 @@ async function runSuccessScenario(cdp, pageUrl, sensitiveFixturePath, fixtureByt
   });
   const scenario = await openScenario(cdp, pageUrl, { captureClipboard: true });
   try {
-    const reportJson = await completeTwoCycleReport(
-      cdp,
-      scenario,
-      sensitiveFixturePath,
-      { exercisePreview: true },
-    );
+    const reportJson = await completeTwoCycleReport(cdp, scenario, sensitiveFixturePath);
     const domReport = parseAndValidateReport(reportJson, fixtureBytes);
 
     await click(cdp, scenario, '#copy-report');

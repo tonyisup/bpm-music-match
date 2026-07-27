@@ -118,6 +118,8 @@ function completeCycle(workflow, sha256 = 'ab'.repeat(32)) {
     accepted: true,
     identityReset: false,
   });
+  workflow.acceptPreview();
+  approveCue(workflow);
   workflow.finishUnload(unloadedCycle(sha256));
 }
 
@@ -301,15 +303,46 @@ test('assembly accepts only the direct static config and explicit false to true 
   );
 });
 
+test('each cycle requires its own successful preview and cue before clean unload', () => {
+  const workflow = createEnrollmentWorkflow();
+  assert.deepEqual(workflow.acceptLoadedAsset(loadedFacts()), {
+    accepted: true,
+    identityReset: false,
+  });
+  assert.equal(workflow.snapshot().previewConfirmed, false);
+  assert.equal(workflow.snapshot().cueConfirmed, false);
+  assert.throws(() => approveCue(workflow), /preview/);
+  assert.throws(() => workflow.finishUnload(unloadedCycle()), /preview/);
+
+  workflow.acceptPreview();
+  assert.equal(workflow.snapshot().previewConfirmed, true);
+  assert.throws(() => workflow.finishUnload(unloadedCycle()), /cue/);
+  approveCue(workflow);
+  workflow.finishUnload(unloadedCycle());
+  assert.equal(workflow.snapshot().completedUnloadCycles, 1);
+  assert.equal(workflow.snapshot().previewConfirmed, false);
+  assert.equal(workflow.snapshot().cueConfirmed, false);
+
+  assert.deepEqual(workflow.acceptLoadedAsset(loadedFacts()), {
+    accepted: true,
+    identityReset: false,
+  });
+  assert.throws(() => workflow.finishUnload(unloadedCycle()), /preview/);
+  workflow.acceptPreview();
+  approveCue(workflow);
+  workflow.finishUnload(unloadedCycle());
+  assert.equal(workflow.snapshot().completedUnloadCycles, 2);
+});
+
 test('report stays unavailable until two matching clean unload cycles and explicit BPM confirmation', () => {
   const workflow = createEnrollmentWorkflow();
-  approveCue(workflow);
 
   completeCycle(workflow);
   assert.deepEqual(workflow.snapshot(), {
     completedUnloadCycles: 1,
     bpmConfirmed: false,
-    cueConfirmed: true,
+    previewConfirmed: false,
+    cueConfirmed: false,
     loadActive: false,
     reportReady: false,
     identityReset: false,
@@ -337,7 +370,6 @@ test('report stays unavailable until two matching clean unload cycles and explic
 test('cycle two SHA mismatch resets enrollment instead of merging identities', () => {
   const workflow = createEnrollmentWorkflow();
   workflow.confirmConfiguredBpm(true);
-  approveCue(workflow);
   completeCycle(workflow, 'ab'.repeat(32));
 
   assert.deepEqual(workflow.acceptLoadedAsset(loadedFacts('cd'.repeat(32))), {
@@ -347,6 +379,7 @@ test('cycle two SHA mismatch resets enrollment instead of merging identities', (
   assert.deepEqual(workflow.snapshot(), {
     completedUnloadCycles: 0,
     bpmConfirmed: false,
+    previewConfirmed: false,
     cueConfirmed: false,
     loadActive: false,
     reportReady: false,
@@ -373,6 +406,8 @@ test('workflow rejects private strings, extra facts, weak cleanup, and unconfirm
     accepted: true,
     identityReset: false,
   });
+  workflow.acceptPreview();
+  approveCue(workflow);
   assert.throws(() => workflow.finishUnload(unloadedCycle('ab'.repeat(32), {
     counters: {
       rawBuffers: 0,
@@ -391,7 +426,6 @@ test('workflow rejects private strings, extra facts, weak cleanup, and unconfirm
 test('copy and data URL download export only the closed recursive report schema', () => {
   const workflow = createEnrollmentWorkflow();
   workflow.confirmConfiguredBpm(true);
-  approveCue(workflow);
   completeCycle(workflow);
   completeCycle(workflow);
 

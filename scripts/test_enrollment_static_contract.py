@@ -193,6 +193,24 @@ class EnrollmentStaticContractTests(unittest.TestCase):
         self.assertNotIn("tests/fixtures", source)
         self.assertNotIn("synthetic-enrollment.mp3", source)
 
+    def test_real_browser_success_protocol_previews_and_analyzes_both_cycles(self):
+        smoke = (REPO_ROOT / "scripts" / "enrollment_browser_privacy_smoke.mjs").read_text(
+            encoding="utf-8"
+        )
+        start = smoke.index("async function completeTwoCycleReport")
+        end = smoke.index("\nasync function runCopyPagehideScenario", start)
+        protocol = smoke[start:end]
+
+        for selector in ["#play-preview", "#use-preview-time", "#stop-preview", "#analyze-cue"]:
+            self.assertEqual(protocol.count(f"await click(cdp, scenario, '{selector}')"), 2)
+        self.assertEqual(protocol.count("await click(cdp, scenario, '#unload-track')"), 2)
+
+        self.assertIn("workflow.acceptPreview();", self.app)
+        self.assertIn(
+            "controls.analyze.disabled = !loadedReady || !model.previewConfirmed || operationPending;",
+            self.app,
+        )
+
     def test_mobile_accessibility_safe_area_and_reduced_motion_contract(self):
         for required in [
             "min-width: 48px",

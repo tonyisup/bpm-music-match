@@ -148,6 +148,8 @@ export function createEnrollmentWorkflow() {
   let enrolledFacts = null;
   let confirmedConfig = null;
   let targetEntryDownbeatSeconds = null;
+  let activePreviewConfirmed = false;
+  let activeCueConfirmed = false;
   let finalReport = null;
   let identityReset = false;
 
@@ -157,6 +159,8 @@ export function createEnrollmentWorkflow() {
     enrolledFacts = null;
     confirmedConfig = null;
     targetEntryDownbeatSeconds = null;
+    activePreviewConfirmed = false;
+    activeCueConfirmed = false;
     finalReport = null;
     identityReset = true;
   }
@@ -196,12 +200,22 @@ export function createEnrollmentWorkflow() {
       return Object.freeze({ accepted: false, identityReset: true });
     }
     activeFacts = facts;
+    activePreviewConfirmed = false;
+    activeCueConfirmed = false;
     identityReset = false;
     return Object.freeze({ accepted: true, identityReset: false });
   }
 
+  function acceptPreview() {
+    if (activeFacts === null) throw new TypeError('preview requires an active accepted load');
+    activePreviewConfirmed = true;
+  }
+
   function acceptCue(value) {
+    if (activeFacts === null) throw new TypeError('cue requires an active accepted load');
+    if (!activePreviewConfirmed) throw new TypeError('cue requires preview in the active cycle');
     targetEntryDownbeatSeconds = snapshotApprovedCue(value);
+    activeCueConfirmed = true;
     tryBuildReport();
   }
 
@@ -215,10 +229,14 @@ export function createEnrollmentWorkflow() {
 
   function finishUnload(value) {
     if (activeFacts === null) throw new TypeError('no accepted load is active');
+    if (!activePreviewConfirmed) throw new TypeError('clean unload requires preview in the active cycle');
+    if (!activeCueConfirmed) throw new TypeError('clean unload requires cue analysis in the active cycle');
     const cycle = snapshotCleanCycle(value, activeFacts.sha256);
     if (cycles.length === 0) enrolledFacts = activeFacts;
     cycles = [...cycles, cycle];
     activeFacts = null;
+    activePreviewConfirmed = false;
+    activeCueConfirmed = false;
     identityReset = false;
     tryBuildReport();
   }
@@ -227,7 +245,8 @@ export function createEnrollmentWorkflow() {
     return Object.freeze({
       completedUnloadCycles: cycles.length,
       bpmConfirmed: confirmedConfig !== null,
-      cueConfirmed: targetEntryDownbeatSeconds !== null,
+      previewConfirmed: activePreviewConfirmed,
+      cueConfirmed: activeCueConfirmed,
       loadActive: activeFacts !== null,
       reportReady: finalReport !== null,
       identityReset,
@@ -235,6 +254,7 @@ export function createEnrollmentWorkflow() {
   }
 
   return Object.freeze({
+    acceptPreview,
     acceptCue,
     acceptLoadedAsset,
     confirmConfiguredBpm,
@@ -407,7 +427,7 @@ export function main(documentValue = document) {
     controls.play.disabled = !loadedReady || previewRunning || operationPending;
     controls.stop.disabled = !loadedReady || !previewRunning || operationPending;
     controls.useTime.disabled = !loadedReady || !previewRunning || operationPending;
-    controls.analyze.disabled = !loadedReady || operationPending;
+    controls.analyze.disabled = !loadedReady || !model.previewConfirmed || operationPending;
     controls.bpm.disabled = operationPending;
     controls.unload.disabled = !loadedReady || !model.cueConfirmed || operationPending;
     controls.copy.disabled = reportExport === null || operationPending;
@@ -543,6 +563,7 @@ export function main(documentValue = document) {
       if (!uiOperations.finish(previewRequest)) return;
       previewPending = false;
       previewRunning = true;
+      workflow.acceptPreview();
       render();
       setStatus('Raw Web Audio preview is playing.');
     } catch {
