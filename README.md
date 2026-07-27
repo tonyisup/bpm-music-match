@@ -1,8 +1,8 @@
 # BPM Music Match
 
-A narrow personal workout-music experiment. Milestone 1 is a disposable Android Chrome gate that answers one technical question: can one raw Web Audio graph start from a direct gesture, schedule phase-locked percussion, overlap into one controlled track, and release every source reliably?
+A narrow personal workout-music experiment. Milestone 1 is a frozen disposable Android Chrome gate that proved one raw Web Audio graph can start from a direct gesture, schedule phase-locked percussion, overlap into one controlled track, and release every source reliably. Milestone 2 is now the active one-track tap-to-handoff experiment.
 
-This milestone is **not** product validation. It has no tap tempo, provider integration, catalog, account, playlist, or matcher. The separate `/enroll/` utility is a private-fixture bootstrap exception, not Milestone 2 product architecture. Follow the [private enrollment runbook](tools/m2-enrollment/README.md); never upload or send the MP3.
+The Milestone 2 fixture gate completed on the accepted Pixel with the sanitized `m2-island-party-v1` identity. The separate `/enroll/` utility remains a private-fixture bootstrap exception, not product architecture. The private MP3 is never committed, uploaded, or redistributed. Milestone 2 still excludes provider integration, catalog, accounts, playlists, persistence, automatic BPM/downbeat analysis, and generalized matching.
 
 ## Prerequisites
 
@@ -90,7 +90,7 @@ gh run watch "$RUN_ID" --exit-status
 
 The public Gate 1 URL is <https://tonyisup.github.io/bpm-music-match/>. It remains frozen to accepted Gate 1 commit `11df30f6f6cf90940bee425847614abaf26cc6f1`, even when a later deployment commit publishes it. Before every Gate 1 Android trial, expand **Diagnostics** at **Ready** and confirm that accepted identity.
 
-The public enrollment bootstrap URL is <https://tonyisup.github.io/bpm-music-match/enroll/>. The candidate MP3 remains private and local; the URL itself is publicly reachable. Its HTML and every executed enrollment module identify the deploying main-branch commit and reject mixed cached builds. Do not use it until the exact reviewed deployment succeeds, and follow the [Private enrollment runbook](tools/m2-enrollment/README.md).
+The public enrollment bootstrap URL is <https://tonyisup.github.io/bpm-music-match/enroll/>. The candidate MP3 remains private and local; the URL itself is publicly reachable. Its HTML and every executed enrollment module identify the deploying main-branch commit and reject mixed cached builds. Enrollment is complete for `m2-island-party-v1`; rerun it only if the fixture or experiment identity changes, and always follow the [Private enrollment runbook](tools/m2-enrollment/README.md).
 
 ## Troubleshooting
 
@@ -188,5 +188,6 @@ Browser details are intentionally not shown in the user-visible error copy. Use 
 - [Spike contract and calibration runbook](spikes/001-mobile-web-audio-gate/README.md)
 - [Android validation worksheet](spikes/001-mobile-web-audio-gate/validation/gate-1.md)
 - [Milestone 2 one-track design](docs/design/2026-07-24-milestone-2-one-track-vertical-slice.md)
+- [Milestone 2 one-track implementation plan](docs/plans/2026-07-27-milestone-2-one-track-vertical-slice.md)
 - [Milestone 2 enrollment bootstrap plan](docs/plans/2026-07-25-milestone-2-enrollment-bootstrap.md)
 - [Private enrollment runbook](tools/m2-enrollment/README.md)

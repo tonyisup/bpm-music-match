@@ -5,6 +5,7 @@ Branch: main
 Repo: tonyisup/bpm-music-match
 Status: APPROVED
 Approved: 2026-07-24 17:13:34 PDT by Tony
+Fixture gate: COMPLETE 2026-07-27 through the accepted Pixel two-cycle enrollment report
 Mode: Builder
 Builds on: `docs/design/approved-design.md` and Gate 1 evidence tag `gate-1-android-pass-2026-07-24`
 
@@ -170,7 +171,7 @@ The exception is intentionally separate from the one-track product architecture.
 
 Fixture completion requires the accepted Pixel sequence and review of the exact downloaded `m2-enrollment-report.json`. **Never upload or send the MP3.** Until fixture completion, this bootstrap does not authorize Milestone 2 product implementation. Completion authorizes only use of the reviewed sanitized identity under this approved design; it does not authorize a generalized local-file flow, provider work, persistence, automatic analysis, or broader product scope.
 
-A template is sufficient for design approval, but implementation planning remains blocked until local enrollment completes every field.
+The accepted Pixel enrollment completed every required fixture field on 2026-07-27. Implementation planning is now authorized under this design; the private MP3 remains outside the repository and every broader product exclusion remains in force.
 
 ### Audio constraints
 
@@ -762,28 +763,28 @@ Required fixture:
 
 | Field | Normative requirement | Current status |
 |---|---|---|
-| `assetVersion` | explicit immutable asset metadata version | awaiting enrollment |
-| `displayLabel` | non-sensitive UI label | awaiting Tony |
-| `allowedExtension` | exact selected-file extension | awaiting file selection |
-| `allowedMimeType` | exact Android picker/browser MIME observation | awaiting file selection |
-| `sha256` | lowercase 64-hex SHA-256 of selected bytes | awaiting local hash enrollment |
-| `trackBpm` | manually verified finite 1:1 BPM | awaiting curation |
+| `assetVersion` | explicit immutable asset metadata version | `m2-island-party-v1` |
+| `displayLabel` | non-sensitive UI label | `Island Party by NDA` |
+| `allowedExtension` | exact selected-file extension | `.mp3` |
+| `allowedMimeType` | exact Android picker/browser MIME observation | `audio/mpeg` |
+| `sha256` | lowercase 64-hex SHA-256 of selected bytes | `faf3d6de8778bb343c3ae92dff9023facffde8288868e5ee017e842205298521` |
+| `trackBpm` | manually verified finite 1:1 BPM | `110`, explicitly confirmed |
 | `beatsPerBar` | integer `4` | fixed |
-| `targetEntryDownbeatSeconds` | manually verified finite timestamp | awaiting curation |
-| `decodedDurationSeconds` | observed duration with ±0.050 s tolerance | awaiting local decode |
-| `decodedChannelCount` | observed integer 1 or 2 | awaiting local decode |
-| `decodedSampleRate` | observed 8–96 kHz | awaiting local decode |
-| `calculatedDecodedPcmBytes` | exact frames × channels × 4, ≤160 MiB; duration estimate consistent | awaiting local decode |
-| `applicationMemoryContractPassed` | true after exactly two matching cold load/unload cycles | awaiting Pixel enrollment |
-| `ownedReferencesCleared` | all application-owned file/byte/buffer/source/context references cleared | awaiting Pixel enrollment |
-| `contextsCloseSettled` | both owned context closes resolved successfully | awaiting Pixel enrollment |
+| `targetEntryDownbeatSeconds` | manually verified finite timestamp | `17.579` |
+| `decodedDurationSeconds` | observed duration with ±0.050 s tolerance | `122.01795833333334` |
+| `decodedChannelCount` | observed integer 1 or 2 | `2` |
+| `decodedSampleRate` | observed 8–96 kHz | `48000` |
+| `calculatedDecodedPcmBytes` | exact frames × channels × 4, ≤160 MiB; duration estimate consistent | `46854896` (`5856862` frames) |
+| `applicationMemoryContractPassed` | true after exactly two matching cold load/unload cycles | `true` |
+| `ownedReferencesCleared` | all application-owned file/byte/buffer/source/context references cleared | `true` |
+| `contextsCloseSettled` | both owned context closes resolved successfully | `true` |
 | `browserHeapObserved` | `false`; no unsupported heap/process-memory claim | fixed honesty marker |
-| cue energy | 0–50 ms RMS ≥0.010 and peak ≥0.050 | awaiting local validation |
+| cue energy | 0–50 ms RMS ≥0.010 and peak ≥0.050 | passed in both accepted enrollment cycles |
 | `minimumPostCrossfadeTailSeconds` | `2.0` seconds | fixed |
 | `maxCompressedBytes` | `20 MiB` | fixed |
 | `maxDecodedPcmBytes` | `160 MiB` | fixed |
 | `configVersion` | `m2-config-v1` initial identity | fixed baseline |
-| `percussionRecipeId` | one documented synthesized recipe | awaiting Tony's character choice |
+| `percussionRecipeId` | one documented synthesized recipe | `kick-snare-v1` |
 | `percussionTrimGain` | `0.25` initial safe hypothesis | fixed until bounded tuning |
 | `trackTrimGain` | `0.50` initial safe hypothesis | fixed until bounded tuning |
 | `masterGain` | `0.70` initial safe hypothesis | fixed until bounded tuning |
@@ -791,19 +792,11 @@ Required fixture:
 
 Enrollment order is byte-size → SHA → decode → observed-property checks → cue-energy oracle → two-cycle application cleanup check. It occurs locally without committing, uploading, or redistributing audio. The completed fixture contains identities and timing/numeric facts only.
 
-## Open Questions
+## Resolved Stimulus Inputs
 
-Only stimulus choices remain:
+The accepted private fixture is `Island Party by NDA`, selected locally as `.mp3` / `audio/mpeg` on the accepted Pixel. The report records 1,952,287 compressed bytes, SHA-256 `faf3d6de8778bb343c3ae92dff9023facffde8288868e5ee017e842205298521`, stereo 48 kHz decode, 5,856,862 frames, 46,854,896 decoded PCM bytes, and 122.01795833333334 seconds duration. Tony explicitly confirmed the 1:1 BPM as 110, the curated target-entry downbeat as 17.579 seconds, and the percussion character as `kick-snare-v1`.
 
-1. Which exact local audio file will be used?
-2. What non-sensitive label may appear in UI and evidence?
-3. Which exact extension/MIME pair does Android Chrome observe?
-4. What are its local SHA-256, compressed bytes, duration, channel count, sample rate, and PCM estimate?
-5. What is the manually verified 1:1 BPM?
-6. What is the first clean 4/4 target-entry downbeat with four lead-in beats and required tail?
-7. Which percussion character should `percussionRecipeId` implement: kick/snare, shaker, neutral click, or another specific sound?
-
-These are external stimulus inputs, not architecture discretion. If the selected file exceeds the fixed memory/duration limits or lacks a usable pre-roll/downbeat/tail, choose a different file rather than weakening the safety envelope.
+These values close the external stimulus questions without changing the architecture. Only this sanitized identity may enter source and evidence; the filename, path, URI, bytes, samples, and audio content remain private.
 
 ## Success Criteria
 
@@ -831,28 +824,16 @@ Continue with a static GitHub Pages deployment and no backend.
 
 ## Next Steps
 
-1. Supply the exact local track and non-sensitive display label.
-2. Compute its SHA-256 locally without copying it into the repository.
-3. Observe its extension/MIME, decoded duration, and memory-envelope compliance on the Pixel.
-4. Verify its 1:1 BPM and curate the target-entry downbeat.
-5. Choose the first percussion character and complete the stimulus fixture.
-6. Write the implementation plan with strict red-green-refactor tasks and exact file boundaries.
-7. Run CEO, design, engineering, and DevEx plan reviews before implementation.
-8. Implement the deterministic core first, then browser adapters, then real Web Audio, then UI.
-9. Deploy only after offline/replay/privacy/lifecycle verification passes.
-10. Run the ten-trial Android protocol and two cancellation smokes.
-11. Record PASS or STOP before any field-workout or provider work.
+1. Write the implementation plan with strict red-green-refactor tasks and exact file boundaries.
+2. Run CEO, design, engineering, and DevEx plan reviews before implementation.
+3. Implement the deterministic core first, then browser adapters, then real Web Audio, then UI.
+4. Deploy only after offline/replay/privacy/lifecycle verification passes.
+5. Run the ten-trial Android protocol and two cancellation smokes.
+6. Record PASS or STOP before any field-workout or provider work.
 
-## The Assignment
+## Assignment Completion
 
-Choose one exact local song file on the Pixel 8 Pro that you are willing to select manually for every test session. Do not upload or send it. Provide only:
-
-- a non-sensitive display label;
-- whether the file is accessible through Android’s file picker;
-- your best known BPM, if any;
-- the percussion character you want to hear while tapping.
-
-The implementation workflow will compute the file hash locally and help verify BPM/downbeat without committing or uploading the audio.
+Tony completed the assignment on the accepted Pixel with `Island Party by NDA`, BPM 110, and `kick-snare-v1`. The accepted two-cycle report fixed the sanitized identity and timing facts above without committing, uploading, or redistributing the audio. No further stimulus input is required before implementation planning.
 
 ## What I Noticed About How You Think
 
