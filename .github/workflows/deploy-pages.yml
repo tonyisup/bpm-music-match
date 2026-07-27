@@ -1,6 +1,7 @@
 name: Deploy Android audio gate
 
 on:
+  pull_request:
   push:
     branches: [main]
   workflow_dispatch:
@@ -9,7 +10,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: pages
+  group: pages-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -20,6 +21,9 @@ jobs:
     steps:
       - name: Check out source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
       - name: Set up Python
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
@@ -28,61 +32,44 @@ jobs:
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: '22.22.3'
-      - name: Verify gate
+      - name: Verify gate and enrollment
         run: python3 scripts/verify_gate.py
-      - name: Configure Pages
-        uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6.0.0
-      - name: Stage immutable site
+      - name: Verify immutable Pages staging
         env:
           GITHUB_SHA: ${{ github.sha }}
-        run: |
-          rm -rf _site
-          mkdir -p _site/assets
-          cp spikes/001-mobile-web-audio-gate/index.html _site/index.html
-          cp spikes/001-mobile-web-audio-gate/styles.css _site/styles.css
-          cp spikes/001-mobile-web-audio-gate/app.mjs _site/app.mjs
-          cp spikes/001-mobile-web-audio-gate/audio-engine.mjs _site/audio-engine.mjs
-          cp spikes/001-mobile-web-audio-gate/audio-math.mjs _site/audio-math.mjs
-          cp spikes/001-mobile-web-audio-gate/asset-metadata.json _site/asset-metadata.json
-          cp spikes/001-mobile-web-audio-gate/calibration.json _site/calibration.json
-          cp spikes/001-mobile-web-audio-gate/assets/gate-track.wav _site/assets/gate-track.wav
-          python3 - <<'PY'
-          import os
-          from pathlib import Path
-
-          commit = os.environ["GITHUB_SHA"]
-          if len(commit) != 40 or any(character not in "0123456789abcdef" for character in commit):
-              raise SystemExit("GITHUB_SHA is not a full lowercase commit SHA")
-          targets = [
-              Path("_site/index.html"),
-              Path("_site/app.mjs"),
-              Path("_site/audio-engine.mjs"),
-              Path("_site/audio-math.mjs"),
-          ]
-          placeholder = "__BUILD_COMMIT__"
-          for target in targets:
-              source = target.read_text()
-              if source.count(placeholder) != 1:
-                  raise SystemExit(f"{target} must contain exactly one build-commit placeholder")
-              target.write_text(source.replace(placeholder, commit))
-              if placeholder in target.read_text():
-                  raise SystemExit(f"{target} still contains build-commit placeholder")
-          PY
-      - name: Upload Pages artifact
-        uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
-        with:
-          path: _site
+        run: python3 scripts/stage_pages.py "$GITHUB_SHA" _site
 
   deploy:
     needs: verify-and-stage
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     permissions:
+      contents: read
       pages: write
       id-token: write
     steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.13.7'
+      - name: Stage immutable Pages artifact
+        env:
+          GITHUB_SHA: ${{ github.sha }}
+        run: python3 scripts/stage_pages.py "$GITHUB_SHA" _site
+      - name: Configure Pages
+        uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6.0.0
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
+        with:
+          path: _site
       - name: Deploy Pages
         id: deployment
         uses: actions/deploy-pages@cd2ce8fcbc39b97be8ca5fce6e763baed58fa128 # v5.0.0

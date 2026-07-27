@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import re
+import subprocess
 import unittest
 from html.parser import HTMLParser
 from pathlib import Path
@@ -9,6 +10,7 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SPIKE_ROOT = REPO_ROOT / "spikes" / "001-mobile-web-audio-gate"
+ENROLLMENT_ROOT = REPO_ROOT / "tools" / "m2-enrollment"
 
 
 class ContractParser(HTMLParser):
@@ -47,6 +49,14 @@ class ContractParser(HTMLParser):
 
     def elements(self, tag):
         return [attrs for found_tag, attrs in self.start_tags if found_tag == tag]
+
+
+def source_between(test_case, source, start_marker, end_marker):
+    start = source.find(start_marker)
+    test_case.assertNotEqual(start, -1, f"missing source marker: {start_marker}")
+    end = source.find(end_marker, start)
+    test_case.assertNotEqual(end, -1, f"missing source marker after start: {end_marker}")
+    return source[start:end]
 
 
 class StaticGateContractTests(unittest.TestCase):
@@ -126,7 +136,7 @@ class StaticGateContractTests(unittest.TestCase):
         self.assertEqual(set(calibration), {"trackTrim", "percussionTrim", "masterGain"})
         self.assertEqual(calibration, {"trackTrim": 0.7, "percussionTrim": 0.35, "masterGain": 0.8})
 
-    def test_pages_workflow_is_immutable_least_privilege_and_uses_only_the_verifier(self):
+    def test_pages_workflow_is_pr_safe_and_deploys_only_push_main(self):
         workflow = (REPO_ROOT / ".github" / "workflows" / "deploy-pages.yml").read_text()
         expected_actions = {
             "actions/checkout": ("3d3c42e5aac5ba805825da76410c181273ba90b1", "v7.0.1"),
@@ -139,24 +149,116 @@ class StaticGateContractTests(unittest.TestCase):
         for action, (commit, tag) in expected_actions.items():
             self.assertIn(f"{action}@{commit} # {tag}", workflow)
         self.assertIsNone(re.search(r"uses:\s+[^\s]+@v\d", workflow))
+        self.assertIn("pull_request:", workflow)
+        self.assertIn("push:\n    branches: [main]", workflow)
+        self.assertIn("workflow_dispatch:", workflow)
         self.assertEqual(workflow.count("python3 scripts/verify_gate.py"), 1)
-        for forbidden in ["node --test", "python3 -m unittest", "test_generate_gate_track.py", "test_static_contract.py"]:
+        self.assertEqual(workflow.count('python3 scripts/stage_pages.py "$GITHUB_SHA" _site'), 2)
+        for forbidden in [
+            "node --test", "python3 -m unittest", "test_generate_gate_track.py",
+            "test_static_contract.py", "cp ", "rm -rf", "mkdir ", "python3 - <<",
+            "__BUILD_COMMIT__",
+        ]:
             self.assertNotIn(forbidden, workflow)
         self.assertIn("python-version: '3.13.7'", workflow)
         self.assertIn("node-version: '22.22.3'", workflow)
-        self.assertIn("contents: read", workflow)
-        self.assertIn("pages: write", workflow)
-        self.assertIn("id-token: write", workflow)
+        self.assertEqual(workflow.count("fetch-depth: 0"), 2)
+        self.assertEqual(workflow.count("persist-credentials: false"), 2)
+        self.assertEqual(workflow.count("GITHUB_SHA: ${{ github.sha }}"), 2)
+        self.assertIn("group: pages-${{ github.ref }}", workflow)
         self.assertIn("cancel-in-progress: true", workflow)
-        self.assertIn("__BUILD_COMMIT__", workflow)
-        self.assertIn("GITHUB_SHA", workflow)
         self.assertIn("path: _site", workflow)
-        self.assertNotIn("cp -R spikes/001-mobile-web-audio-gate/. _site/", workflow)
-        for public_file in [
-            "index.html", "styles.css", "app.mjs", "audio-engine.mjs", "audio-math.mjs",
-            "asset-metadata.json", "calibration.json", "assets/gate-track.wav",
+
+        verify_job, deploy_job = workflow.split("\n  deploy:", maxsplit=1)
+        self.assertIn("verify-and-stage:", verify_job)
+        self.assertIn("permissions:\n      contents: read", verify_job)
+        for forbidden in [
+            "pages: write", "id-token: write", "environment:",
+            "actions/configure-pages", "actions/upload-pages-artifact", "actions/deploy-pages",
         ]:
-            self.assertIn(public_file, workflow)
+            self.assertNotIn(forbidden, verify_job)
+
+        self.assertIn("if: github.event_name == 'push' && github.ref == 'refs/heads/main'", deploy_job)
+        self.assertIn("environment:\n      name: github-pages", deploy_job)
+        self.assertIn("permissions:\n      contents: read\n      pages: write\n      id-token: write", deploy_job)
+        self.assertEqual(deploy_job.count("actions/configure-pages@"), 1)
+        self.assertEqual(deploy_job.count("actions/upload-pages-artifact@"), 1)
+        self.assertEqual(deploy_job.count("actions/deploy-pages@"), 1)
+
+    def test_enrollment_source_modules_have_structural_local_build_identity(self):
+        enrollment_root = REPO_ROOT / "tools" / "m2-enrollment"
+        executable_modules = [
+            "app.mjs",
+            "enrollment-config.mjs",
+            "enrollment-browser.mjs",
+            "enrollment-browser-load.mjs",
+            "enrollment-browser-preview.mjs",
+            "enrollment-browser-resources.mjs",
+            "enrollment-browser-shared.mjs",
+            "enrollment-lifecycle.mjs",
+            "enrollment-measurements.mjs",
+            "enrollment-report.mjs",
+        ]
+        for module_name in executable_modules:
+            source = (enrollment_root / module_name).read_text(encoding="utf-8")
+            self.assertIn(
+                "import { assertEnrollmentBuildCommit } from './enrollment-build.mjs';",
+                source,
+                module_name,
+            )
+            self.assertEqual(
+                source.count("assertEnrollmentBuildCommit('__ENROLLMENT_BUILD_COMMIT__');"),
+                1,
+                module_name,
+            )
+            self.assertEqual(source.count("__ENROLLMENT_BUILD_COMMIT__"), 1, module_name)
+
+        identity = (enrollment_root / "enrollment-build.mjs").read_text(encoding="utf-8")
+        self.assertEqual(identity.count("__ENROLLMENT_BUILD_COMMIT__"), 1)
+        app = (enrollment_root / "app.mjs").read_text(encoding="utf-8")
+        html_startup = source_between(
+            self,
+            app,
+            "assertEnrollmentHtmlBuildCommit(documentValue);",
+            "createEnrollmentBrowserController({",
+        )
+        source_between(
+            self,
+            html_startup,
+            "assertEnrollmentHtmlBuildCommit(documentValue);",
+            "const status = element(documentValue, 'status');",
+        )
+
+    def test_identity_wiring_adds_no_exports_to_existing_enrollment_modules(self):
+        expected = {
+            "app.mjs": ["assembleEnrollmentConfig", "capturePrivateFileSelection", "createCancellationUiOutcome", "createEnrollmentWorkflow", "createReportExport", "createUiOperationGate", "isCleanApplicationTeardownResult", "main"],
+            "enrollment-config.mjs": ["ENROLLMENT_CONFIG"],
+            "enrollment-browser.mjs": ["createEnrollmentBrowserController"],
+            "enrollment-browser-load.mjs": ["createLoadBoundary"],
+            "enrollment-browser-preview.mjs": ["createPreviewLifecycle"],
+            "enrollment-browser-resources.mjs": ["createResourceBoundary"],
+            "enrollment-browser-shared.mjs": ["COUNTER_KEYS", "EnrollmentBrowserError", "copyCounters", "copyCycle", "copyTeardownResult", "createDeferred", "isObjectLike", "operationOutcome", "typedError"],
+            "enrollment-core.mjs": ["analyzeCueEnergy", "createSanitizedReport", "evaluateApplicationMemoryContract", "preflightCompressedBytes", "serializeSanitizedReport", "validateDecodedBounds", "validateTimingBounds"],
+            "enrollment-lifecycle.mjs": ["createApplicationMemoryEvidence", "evaluateApplicationMemoryContract"],
+            "enrollment-measurements.mjs": ["MEASUREMENT_LIMITS", "analyzeCueEnergy", "preflightCompressedBytes", "validateDecodedBounds", "validateTimingBounds"],
+            "enrollment-report.mjs": ["createSanitizedReport", "serializeSanitizedReport"],
+        }
+        script = """
+          const expected = JSON.parse(process.argv[1]);
+          const actual = {};
+          for (const name of Object.keys(expected)) {
+            actual[name] = Object.keys(await import(`./tools/m2-enrollment/${name}`)).sort();
+          }
+          process.stdout.write(JSON.stringify(actual));
+        """
+        completed = subprocess.run(
+            ["node", "--input-type=module", "--eval", script, json.dumps(expected)],
+            cwd=REPO_ROOT,
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(json.loads(completed.stdout), expected)
 
     def test_documentation_forms_one_executable_path_without_calibration_duplication(self):
         root_readme = (REPO_ROOT / "README.md").read_text()
@@ -168,10 +270,17 @@ class StaticGateContractTests(unittest.TestCase):
             "python3 -m http.server 8000 --bind 127.0.0.1 --directory spikes/001-mobile-web-audio-gate",
             "http://127.0.0.1:8000/", "gh auth status", "build_type=workflow",
             "gh run watch", "PASS runtime-version", "PASS asset-integrity",
-            "PASS static-contract", "PASS module-import", "PASS node-tests", "PASS gate 5/5",
+            "PASS static-contract", "PASS module-import", "PASS node-tests",
+            "PASS enrollment-static-contract", "PASS enrollment-module-import",
+            "PASS enrollment-node-tests", "PASS enrollment-browser-privacy",
+            "PASS pages-staging", "PASS gate 10/10",
         ]:
             self.assertIn(required, root_readme)
-        for stage_id in ["runtime-version", "asset-integrity", "static-contract", "module-import", "node-tests"]:
+        for stage_id in [
+            "runtime-version", "asset-integrity", "static-contract", "module-import", "node-tests",
+            "enrollment-static-contract", "enrollment-module-import", "enrollment-node-tests",
+            "enrollment-browser-privacy", "pages-staging",
+        ]:
             self.assertIn(stage_id, root_readme)
         for error_code in [
             "asset-fetch-failed", "metadata-invalid", "asset-integrity-failed", "module-identity-failed", "decode-failed",
@@ -194,6 +303,68 @@ class StaticGateContractTests(unittest.TestCase):
             "Sonic scent verdict", "Product magic verdict", "README-to-Ready",
         ]:
             self.assertIn(required, worksheet)
+
+    def test_enrollment_documentation_is_one_private_pixel_runbook(self):
+        enrollment_readme_path = ENROLLMENT_ROOT / "README.md"
+        self.assertTrue(enrollment_readme_path.is_file(), "missing private enrollment runbook")
+        enrollment_readme = enrollment_readme_path.read_text(encoding="utf-8")
+        root_readme = (REPO_ROOT / "README.md").read_text(encoding="utf-8")
+        design = (
+            REPO_ROOT / "docs" / "design" / "2026-07-24-milestone-2-one-track-vertical-slice.md"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn("[Private enrollment runbook](tools/m2-enrollment/README.md)", root_readme)
+        self.assertIn("https://tonyisup.github.io/bpm-music-match/enroll/", root_readme)
+        self.assertIn("public enrollment bootstrap URL", root_readme)
+        self.assertNotIn("private bootstrap URL", root_readme)
+        self.assertIn("### Enrollment bootstrap exception", design)
+
+        for required in [
+            "bootstrap exception", "Pixel 8 Pro", "Android 16 build `CP1A.260505.005`",
+            "Chrome `150.0.7871.181`", "https://tonyisup.github.io/bpm-music-match/enroll/",
+            "same local MP3", "1:1", "110 BPM", "Play preview", "Use preview time",
+            "Analyze cue", "Unload", "two matching clean cycles", "m2-enrollment-report.json",
+            "`assetIdentity`", "`experimentConfigIdentity`", "Never upload or send the MP3",
+            "does not authorize Milestone 2 product implementation", "browser/native memory release",
+            "python3 scripts/verify_gate.py", "git diff HEAD --check", "git diff --check",
+            "EXPECTED_DEPLOY_SHA=$(git rev-parse HEAD)",
+            "enrollment-build.mjs?v=<EXPECTED_DEPLOY_SHA>", "ENROLLMENT_BUILD_COMMIT",
+        ]:
+            self.assertIn(required, enrollment_readme)
+
+        ordered_pixel_steps = [
+            "1. Open the deployed `/enroll/` utility",
+            "2. Select the candidate MP3",
+            "3. Preview and confirm the target downbeat",
+            "4. Confirm the configured 110 BPM",
+            "5. Unload the first cycle",
+            "6. Select the same local MP3 again",
+            "7. Repeat preview and cue analysis",
+            "8. Unload the second cycle",
+            "9. Download `m2-enrollment-report.json`",
+        ]
+        pixel_step_sections = [
+            source_between(self, enrollment_readme, start_step, end_step)
+            for start_step, end_step in zip(ordered_pixel_steps, ordered_pixel_steps[1:])
+        ]
+
+        deployment_step = pixel_step_sections[0]
+        for required in ["expected full SHA", "exactly equals", "before selecting"]:
+            self.assertIn(required, deployment_step)
+
+        bpm_step = pixel_step_sections[3]
+        for required in [
+            "45th", "44 beat intervals", "24.0 seconds", "three times", "±0.25 seconds",
+            "all three", "half-time", "double-time", "`trackBpm: 110`",
+        ]:
+            self.assertIn(required, bpm_step)
+
+        for forbidden in [
+            "upload the MP3 to", "send the MP3 to", "browser memory was released",
+            "native memory was released", "Milestone 2 implementation is authorized",
+            "deployed utility has no network",
+        ]:
+            self.assertNotIn(forbidden, enrollment_readme)
 
 
 if __name__ == "__main__":
