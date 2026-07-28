@@ -74,6 +74,13 @@ function createContext(
   return context;
 }
 
+export function assertRunContext(context) {
+  if (!RUN_CONTEXTS.has(context)) {
+    throw new TypeError('run context must be a genuine run context');
+  }
+  return true;
+}
+
 export function parseRunQuery(search) {
   if (typeof search !== 'string') {
     throw new TypeError('invalid run query');

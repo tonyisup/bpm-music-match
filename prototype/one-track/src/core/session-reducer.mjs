@@ -8,6 +8,7 @@ import {
   RUN_TABLE,
   RUN_VALUES,
   advanceRunContext,
+  assertRunContext,
   freezeColdContextAtFirstAcceptedTap,
 } from './run-context.mjs';
 import * as tapEstimator from './tap-estimator.mjs';
@@ -112,15 +113,16 @@ const EVENT_SCHEMAS = Object.freeze({
     ...EFFECT_CALLBACK_KEYS,
     'cause',
   ]),
-  tap: Object.freeze([
+  'tap': Object.freeze([
     'type',
     'eventTimestampMs',
     'observedNowMs',
     'mappedTapAudioTime',
     'audioNow',
-    'outputSampleRate',
     'contextState',
+    'outputSampleRate',
   ]),
+  'tap-timing-invalid': Object.freeze(['type', 'audioNow']),
   'idle-deadline': Object.freeze([
     'type',
     'sessionId',
@@ -154,8 +156,16 @@ export const LOAD_FAILURE_CAUSES = Object.freeze([
 
 export const CLEANUP_FAILURE_CAUSES = Object.freeze(['context-close-failed']);
 export const GENERATION_CLEANUP_FAILURE_CAUSES = Object.freeze(['source-stop-failed']);
+const SCHEDULING_EFFECT_TYPES = Object.freeze([
+  'schedule-acknowledgment',
+  'schedule-predictions',
+  'cancel-predictions',
+]);
 const EFFECT_FAILURE_CAUSES = Object.freeze({
   'resume-context': 'context-resume-failed',
+  'schedule-acknowledgment': 'schedule-failed',
+  'schedule-predictions': 'schedule-failed',
+  'cancel-predictions': 'schedule-failed',
   'commit-handoff-plan': 'schedule-failed',
 });
 const RUNTIME_INTERRUPTION_REASONS = Object.freeze(['hidden', 'suspended']);
@@ -318,13 +328,17 @@ function readEvent(candidate) {
   }
   if (event.type === 'evidence-resolved'
       && (!isBoundedIdentifier(event.terminalRecordReceiptId)
-        || !['intentional', 'not-intentional', 'not-judged'].includes(event.verdict)
+        || !['intentional', 'mechanical', 'not-judged'].includes(event.verdict)
         || event.downloaded !== true)) {
     throw new TypeError('resolved evidence must have a closed verdict and completed download');
   }
   if (event.type === 'end-trial'
       && (!Number.isFinite(event.audioNow) || event.audioNow < 0)) {
     throw new TypeError('end trial clock is invalid');
+  }
+  if (event.type === 'tap-timing-invalid'
+      && (!Number.isFinite(event.audioNow) || event.audioNow < 0)) {
+    throw new TypeError('invalid tap timing teardown clock is invalid');
   }
   if (event.type === 'tap') {
     const numericValues = [
@@ -388,8 +402,12 @@ function readEvent(candidate) {
         && event.effectType !== 'application-teardown') {
       throw new TypeError('cleanup settlement effectType is invalid');
     }
+    if (event.type === 'generation-cleanup-settled'
+        && (event.generationId <= 0 || event.effectType !== 'terminate-generation')) {
+      throw new TypeError('cleanup settlement ownership is invalid');
+    }
     if (event.type === 'smoke-probe-settled'
-        && event.effectType !== 'run-smoke-probe') {
+        && (event.generationId <= 0 || event.effectType !== 'run-smoke-probe')) {
       throw new TypeError('cleanup settlement effectType is invalid');
     }
     const cleanup = readExactOrdinaryDataRecord(
@@ -463,6 +481,13 @@ function matchesEffectOwnership(ownership, event) {
     && event.generationId === ownership.generationId
     && event.effectId === ownership.effectId
     && event.effectType === ownership.effectType;
+}
+
+function matchingPendingSchedulingEffect(state, event) {
+  return state.pendingEffects.find((effect) => (
+    SCHEDULING_EFFECT_TYPES.includes(effect.effectType)
+      && matchesEffectOwnership(effect, event)
+  )) ?? null;
 }
 
 function sourceId(generationId, sequence) {
@@ -616,6 +641,30 @@ function beginGenerationTermination(
   }), effects);
 }
 
+function beginPostTerminalGenerationTermination(state, { reason, audioNow }) {
+  const terminateEffect = makeEffect(state, state.nextEffectId, 'terminate-generation', {
+    reason,
+    audioNow,
+  });
+  return createResult(createState({
+    ...state,
+    phase: 'terminating-failure',
+    nextEffectId: state.nextEffectId + 1,
+    generationTermination: {
+      generationId: state.activeGenerationId,
+      effectId: terminateEffect.effectId,
+      targetPhase: 'evidence-pending',
+      cause: reason,
+    },
+    terminal: {
+      cause: state.terminal.cause,
+      diagnostics: [...state.terminal.diagnostics, { cause: reason }],
+    },
+    cleanup: { status: 'pending', cause: null },
+    pendingEffects: [terminateEffect],
+  }), [terminateEffect]);
+}
+
 function predictionIsNotStarted(prediction, audioNow, outputSampleRate) {
   return prediction.scheduledAudioTime > audioNow + 1 / outputSampleRate;
 }
@@ -666,7 +715,7 @@ function beginApplicationTeardown(
     pairedWarmedAutoFailure,
     terminal: terminalCause === null
       ? state.terminal
-      : { cause: terminalCause, diagnostics: [] },
+      : { cause: terminalCause, diagnostics: state.terminal.diagnostics },
     evidence: capturesTerminal
       ? {
         status: 'terminal-captured',
@@ -689,6 +738,35 @@ function beginApplicationTeardown(
     recoveryAction: null,
     nextEffectId: nextEffectId + 1,
   }), effects);
+}
+
+function beginPostTerminalApplicationTeardown(state, { reason }) {
+  const teardownEffect = makeEffect(state, state.nextEffectId, 'application-teardown', {
+    reason,
+    loadToken: null,
+    loadedSessionId: state.loadedSessionId,
+  });
+  return createResult(createState({
+    ...state,
+    phase: 'terminating-failure',
+    activeLoad: null,
+    terminal: {
+      cause: state.terminal.cause,
+      diagnostics: [...state.terminal.diagnostics, { cause: reason }],
+    },
+    cleanup: { status: 'pending', cause: null },
+    resourceDisposition: 'teardown-pending',
+    pendingEffects: [teardownEffect],
+    teardown: {
+      reason,
+      targetPhase: 'evidence-pending',
+      sessionId: teardownEffect.sessionId,
+      generationId: teardownEffect.generationId,
+      effectId: teardownEffect.effectId,
+      effectType: teardownEffect.effectType,
+    },
+    nextEffectId: state.nextEffectId + 1,
+  }), [teardownEffect]);
 }
 
 function resetForSelection(state) {
@@ -779,6 +857,7 @@ function clearedResolvedProtocolFields(
 }
 
 export function createInitialSessionState(runContext) {
+  assertRunContext(runContext);
   const closedRunContext = readRunContext(runContext);
   return createState({
     phase: 'awaiting-track',
@@ -971,6 +1050,10 @@ function handleTap(state, event) {
     }, generationId));
     nextEffectId += 1;
   }
+  pendingEffects = [
+    ...pendingEffects.filter((effect) => !SCHEDULING_EFFECT_TYPES.includes(effect.effectType)),
+    ...effects.filter((effect) => SCHEDULING_EFFECT_TYPES.includes(effect.effectType)),
+  ];
 
   return createResult(createState({
     ...state,
@@ -1048,7 +1131,7 @@ function handleLockDeadline(state, event) {
 
   if (!withinApplicationWindow) {
     const pendingAttempt = {
-      outcome: 'no-match',
+      outcome: 'cadence-unqualified',
       generationId: state.activeGenerationId,
       estimatedBpmExact,
       actualClass: null,
@@ -1246,7 +1329,7 @@ function beginSmokeProbe(state, event) {
       probeCleanup: null,
     },
     cleanup: { status: 'pending', cause: null },
-    pendingEffects: [resumeEffect, probeEffect],
+    pendingEffects: [resumeEffect, acknowledgmentEffect, probeEffect],
   }), [resumeEffect, acknowledgmentEffect, probeEffect]);
 }
 
@@ -1268,14 +1351,58 @@ export function reduceSession(state, rawEvent) {
   ].includes(state.phase) && state.activeGenerationId !== null;
   const callbackActivePhase = activeRuntimePhase || state.phase === 'smoke-probing';
 
+  if (event.type === 'tap-timing-invalid') {
+    return activeRuntimePhase
+      ? beginGenerationTermination(state, {
+        reason: 'tap-timestamp-invalid',
+        audioNow: event.audioNow,
+        cancelDeadline: state.silenceDeadlineTimestampMs !== null,
+        targetPhase: 'evidence-pending',
+      })
+      : createResult(state);
+  }
+
   if (event.type === 'effect-succeeded') {
-    if (callbackActivePhase && matchesEffectOwnership(state.pendingResume, event)) {
+    if (matchesEffectOwnership(state.pendingResume, event)) {
+      if (callbackActivePhase && state.activeGenerationId === event.generationId) {
+        return createResult(createState({
+          ...state,
+          resumeEffectId: null,
+          pendingResume: null,
+          pendingEffects: state.pendingEffects.filter(
+            (effect) => !matchesEffectOwnership(state.pendingResume, effect),
+          ),
+        }));
+      }
+      const reconcileEffect = state.loadedSessionId === null
+        ? null
+        : makeEffect(
+          state,
+          state.nextEffectId,
+          'reconcile-stale-resume',
+          {
+            loadedSessionId: state.loadedSessionId,
+            staleGenerationId: event.generationId,
+            currentGenerationId: null,
+          },
+          event.generationId,
+        );
       return createResult(createState({
         ...state,
+        nextEffectId: state.nextEffectId + (reconcileEffect === null ? 0 : 1),
         resumeEffectId: null,
         pendingResume: null,
         pendingEffects: state.pendingEffects.filter(
           (effect) => !matchesEffectOwnership(state.pendingResume, effect),
+        ),
+      }), reconcileEffect === null ? [] : [reconcileEffect]);
+    }
+    const schedulingEffect = matchingPendingSchedulingEffect(state, event);
+    if (schedulingEffect !== null) {
+      return createResult(createState({
+        ...state,
+        pendingEffects: state.pendingEffects.filter(
+          (effect) => effect !== schedulingEffect,
         ),
       }));
     }
@@ -1296,41 +1423,86 @@ export function reduceSession(state, rawEvent) {
     const retiredResumeIndex = state.retiredResumes.findIndex(
       (ownership) => matchesEffectOwnership(ownership, event),
     );
-    if (retiredResumeIndex !== -1
-        && state.activeGenerationId === null
-        && state.loadedSessionId !== null) {
-      const effect = makeEffect(
-        state,
-        state.nextEffectId,
-        'reconcile-stale-resume',
-        {
-          loadedSessionId: state.loadedSessionId,
-          staleGenerationId: event.generationId,
-          currentGenerationId: null,
-        },
-        event.generationId,
-      );
+    if (retiredResumeIndex !== -1) {
+      const shouldReconcile = state.activeGenerationId === null
+        && state.loadedSessionId !== null;
+      const reconcileEffect = shouldReconcile
+        ? makeEffect(
+          state,
+          state.nextEffectId,
+          'reconcile-stale-resume',
+          {
+            loadedSessionId: state.loadedSessionId,
+            staleGenerationId: event.generationId,
+            currentGenerationId: null,
+          },
+          event.generationId,
+        )
+        : null;
       return createResult(createState({
         ...state,
-        nextEffectId: state.nextEffectId + 1,
+        nextEffectId: state.nextEffectId + (reconcileEffect === null ? 0 : 1),
         retiredResumes: state.retiredResumes.filter(
           (_, index) => index !== retiredResumeIndex,
         ),
-      }), [effect]);
+      }), reconcileEffect === null ? [] : [reconcileEffect]);
     }
     return createResult(state);
   }
 
   if (event.type === 'effect-failed') {
+    if (matchesEffectOwnership(state.pendingResume, event)) {
+      if (activeRuntimePhase && state.terminal.cause === null) {
+        return beginApplicationTeardown(state, {
+          reason: 'context-resume-failed',
+          loadToken: null,
+          loadedSessionId: state.loadedSessionId,
+          targetPhase: 'evidence-pending',
+          terminalCause: 'context-resume-failed',
+        });
+      }
+      if (callbackActivePhase && state.terminal.cause !== null) {
+        return beginPostTerminalApplicationTeardown(state, {
+          reason: 'context-resume-failed',
+        });
+      }
+      return createResult(createState({
+        ...state,
+        resumeEffectId: null,
+        pendingResume: null,
+        pendingEffects: state.pendingEffects.filter(
+          (effect) => !matchesEffectOwnership(state.pendingResume, effect),
+        ),
+      }));
+    }
+    const retiredResumeIndex = state.retiredResumes.findIndex(
+      (ownership) => matchesEffectOwnership(ownership, event),
+    );
+    if (retiredResumeIndex !== -1) {
+      return createResult(createState({
+        ...state,
+        retiredResumes: state.retiredResumes.filter(
+          (_, index) => index !== retiredResumeIndex,
+        ),
+      }));
+    }
+    const schedulingEffect = matchingPendingSchedulingEffect(state, event);
     if (activeRuntimePhase
         && state.terminal.cause === null
-        && matchesEffectOwnership(state.pendingResume, event)) {
-      return beginApplicationTeardown(state, {
-        reason: 'context-resume-failed',
-        loadToken: null,
-        loadedSessionId: state.loadedSessionId,
+        && schedulingEffect !== null) {
+      return beginGenerationTermination(state, {
+        reason: 'schedule-failed',
+        audioNow: state.lastAudioNow,
+        cancelDeadline: state.silenceDeadlineTimestampMs !== null,
         targetPhase: 'evidence-pending',
-        terminalCause: 'context-resume-failed',
+      });
+    }
+    if (callbackActivePhase
+        && state.terminal.cause !== null
+        && schedulingEffect !== null) {
+      return beginPostTerminalGenerationTermination(state, {
+        reason: 'schedule-failed',
+        audioNow: state.lastAudioNow,
       });
     }
     if (activeRuntimePhase
@@ -1674,7 +1846,8 @@ export function reduceSession(state, rawEvent) {
     }), [cancelEffect, teardownEffect]);
   }
 
-  if (state.phase === 'ready'
+  if ((state.phase === 'ready' || state.phase === 'evidence-resolved')
+      && state.loadedSessionId !== null
       && state.smokeProbe === null
       && event.type === 'unload-track') {
     return beginApplicationTeardown(state, {
@@ -1749,6 +1922,26 @@ export function reduceSession(state, rawEvent) {
     if (!matchesGenerationTermination(state, event)) {
       return createResult(state);
     }
+    if (event.cleanup.status === 'failed' && state.terminal.cause === null) {
+      const cleanupFailureState = createState({
+        ...state,
+        cleanup: event.cleanup,
+        terminal: {
+          cause: null,
+          diagnostics: [
+            ...state.terminal.diagnostics,
+            { cause: event.cleanup.cause },
+          ],
+        },
+      });
+      return beginApplicationTeardown(cleanupFailureState, {
+        reason: 'generation-cleanup-failed',
+        loadToken: null,
+        loadedSessionId: state.loadedSessionId,
+        targetPhase: 'evidence-pending',
+        terminalCause: 'schedule-failed',
+      });
+    }
     const targetPhase = state.generationTermination.targetPhase;
     const interrupted = targetPhase === 'interrupted';
     const smokeReady = targetPhase === 'smoke-ready';
@@ -1822,14 +2015,17 @@ export function reduceSession(state, rawEvent) {
         recoveryAction: 'reload',
       })));
     }
-    const recoveryAction = targetPhase === 'error'
-      ? (cleanupFailed || state.terminal.cause === 'track-metadata-invalid'
-        ? 'reload'
-        : 'choose-track')
-      : null;
+    const recoveryAction = cleanupFailed
+      ? 'reload'
+      : (targetPhase === 'error'
+        ? (state.terminal.cause === 'track-metadata-invalid' ? 'reload' : 'choose-track')
+        : null);
+    const settledPhase = cleanupFailed && targetPhase !== 'evidence-pending'
+      ? 'error'
+      : targetPhase;
     return createResult(createState({
       ...state,
-      phase: targetPhase,
+      phase: settledPhase,
       loadedSessionId: null,
       activeGenerationId: null,
       estimatorSnapshot: null,
@@ -1847,19 +2043,17 @@ export function reduceSession(state, rawEvent) {
       pendingHandoffCommit: null,
       trackSource: null,
       generationTermination: null,
-      terminal: state.terminal.cause === null
-        ? state.terminal
-        : {
+      terminal: cleanupFailed
+        ? {
           cause: state.terminal.cause,
-          diagnostics: cleanupFailed
-            ? [...state.terminal.diagnostics, { cause: event.cleanup.cause }]
-            : state.terminal.diagnostics,
-        },
+          diagnostics: [...state.terminal.diagnostics, { cause: event.cleanup.cause }],
+        }
+        : state.terminal,
       evidence: targetPhase === 'evidence-pending'
         ? { ...state.evidence, status: 'pending' }
         : state.evidence,
       cleanup: event.cleanup,
-      resourceDisposition: cleanupFailed ? 'released-with-cleanup-failure' : 'released',
+      resourceDisposition: cleanupFailed ? 'release-failed' : 'released',
       pendingEffects: [],
       teardown: null,
       interruption: null,

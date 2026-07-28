@@ -7,6 +7,7 @@ import {
 
 const LOCAL_BUILD_SHA = '__BUILD_SHA__';
 const genuineOwnershipSnapshots = new WeakSet();
+const genuineHandoffPlans = new WeakSet();
 const MAX_IDENTIFIER_LENGTH = 128;
 const OWNERSHIP_INPUT_KEYS = Object.freeze(['ownedSourceIds', 'predictions']);
 const PREDICTION_KEYS = Object.freeze(['sourceId', 'scheduledAudioTime']);
@@ -397,6 +398,13 @@ function assertHandoffPlanInvariants(plan, ownershipSnapshot) {
   }
 }
 
+export function assertHandoffPlan(plan) {
+  if (!genuineHandoffPlans.has(plan)) {
+    throw new TypeError('plan must be a genuine handoff plan');
+  }
+  return true;
+}
+
 export function createHandoffPlan(rawInput) {
   const input = validateHandoffInput(rawInput);
   const trackBounds = deriveHandoffTrackBounds({
@@ -487,5 +495,7 @@ export function createHandoffPlan(rawInput) {
     ...classifications,
   };
   assertHandoffPlanInvariants(plan, input.ownershipSnapshot);
-  return deepFreeze(plan);
+  const frozenPlan = deepFreeze(plan);
+  genuineHandoffPlans.add(frozenPlan);
+  return frozenPlan;
 }

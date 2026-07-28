@@ -303,12 +303,13 @@ test('T4-LOADING-LIFECYCLE selects, loads, cancels, errors, and unloads determin
       cause: 'context-close-failed',
     }),
   );
-  assert.equal(cancelledSettled.state.phase, 'awaiting-track');
+  assert.equal(cancelledSettled.state.phase, 'error');
+  assert.equal(cancelledSettled.state.recoveryAction, 'reload');
   assert.deepEqual(cancelledSettled.state.cleanup, {
     status: 'failed',
     cause: 'context-close-failed',
   });
-  assert.equal(cancelledSettled.state.resourceDisposition, 'released-with-cleanup-failure');
+  assert.equal(cancelledSettled.state.resourceDisposition, 'release-failed');
   assert.deepEqual(cancelledSettled.state.pendingEffects, []);
 
   const failedLoading = beginLoading().state;
@@ -502,11 +503,12 @@ test('T4-STALE-VALIDATION rejects hostile shapes and ignores stale ownership cal
   assert.equal(eventGetterCounter.count, 0);
 
   const run = parseRunQuery('?run=smoke-playing');
-  const structurallyEquivalentRun = Object.freeze({ ...run });
-  const smokeState = createInitialSessionState(structurallyEquivalentRun);
+  const smokeState = createInitialSessionState(run);
   assert.equal(smokeState.runContext.assignedClass, null);
   assert.equal(smokeState.runContext.slot, null);
   assert.equal(smokeState.runContext.scored, false);
+  const structurallyEquivalentRun = Object.freeze({ ...run });
+  assert.throws(() => createInitialSessionState(structurallyEquivalentRun), TypeError);
   const runWithSymbol = { ...run, [Symbol('extra')]: true };
   Object.freeze(runWithSymbol);
   assert.throws(() => createInitialSessionState(runWithSymbol), TypeError);
@@ -681,8 +683,8 @@ test('T4-FIRST-TAP-TRACKING freezes cold provenance and owns one resumable caden
       deadlineTimestampMs: 2_800,
     }),
   ]);
-  assert.deepEqual(first.state.pendingEffects, [first.effects[0]],
-    'only resume has asynchronous settlement ownership in Task 4B1');
+  assert.deepEqual(first.state.pendingEffects, [first.effects[0], first.effects[1]],
+    'resume and every unsettled failure-reportable scheduling effect retain exact ownership');
   assert.equal(first.state.nextEffectId, 6);
   assertRecursivelyFrozen(first);
   assertPureDataGraph(first);
@@ -697,7 +699,7 @@ test('T4-FIRST-TAP-TRACKING freezes cold provenance and owns one resumable caden
   assert.equal(second.state.phase, 'tracking');
   assert.equal(second.state.activeGenerationId, 1);
   assert.equal(second.state.resumeEffectId, 3);
-  assert.deepEqual(second.state.pendingEffects, first.state.pendingEffects);
+  assert.deepEqual(second.state.pendingEffects, [first.effects[0], second.effects[0]]);
   assert.equal(second.state.silenceDeadlineTimestampMs, 2_400);
   assert.equal(second.state.nextSourceSequence, 3);
   assert.deepEqual(second.effects, [
@@ -1137,13 +1139,16 @@ test('T4-GENERATION-SETTLEMENT retains ownership until exact cleanup settlement'
     { sessionId: 'session-2' },
     { generationId: 2 },
     { effectId: validIdleSettlement.effectId + 1 },
-    { effectType: 'application-teardown' },
   ]) {
     assertNoOp(reduceSession(idleStart.state, {
       ...validIdleSettlement,
       ...overrides,
     }), idleStart.state);
   }
+  assert.throws(() => reduceSession(idleStart.state, {
+    ...validIdleSettlement,
+    effectType: 'application-teardown',
+  }), /cleanup settlement ownership is invalid/);
   const idleSettled = reduceSession(idleStart.state, validIdleSettlement);
   assert.equal(idleSettled.state.phase, 'ready');
   assert.equal(idleSettled.state.loadedSessionId, 'loaded-session-1');
@@ -1307,7 +1312,7 @@ test('T4-NO-MATCH-LOCK bypasses the planner and maps excessive timer lateness', 
     assignedClassMatched: false,
   });
   assert.deepEqual(noMatch.state.pendingAttempt, {
-    outcome: 'no-match',
+    outcome: 'cadence-unqualified',
     generationId: 1,
     estimatedBpmExact: outside.estimatorSnapshot.estimatedBpmExact,
     actualClass: null,
@@ -1382,6 +1387,7 @@ test('T4-NO-MATCH-PROTOCOL retains two retries and escalates the third attempt',
       assert.equal(retried.state.nextGenerationId, attemptNumber + 1);
       assert.equal(retried.state.attempts.length, attemptNumber);
       assert.equal(retried.state.attempts.at(-1).generationId, attemptNumber);
+      assert.equal(retried.state.attempts.at(-1).outcome, 'cadence-unqualified');
       assert.equal(retried.state.pendingAttempt, null);
       assert.equal(retried.state.matchDecision, null);
       assert.equal(retried.state.handoffPlan, null);
@@ -1396,6 +1402,11 @@ test('T4-NO-MATCH-PROTOCOL retains two retries and escalates the third attempt',
     assert.equal(lock.state.pendingAttempt, null);
     assert.equal(lock.state.attempts.length, 3);
     assert.deepEqual(lock.state.attempts.map(({ generationId }) => generationId), [1, 2, 3]);
+    assert.deepEqual(lock.state.attempts.map(({ outcome }) => outcome), [
+      'cadence-unqualified',
+      'cadence-unqualified',
+      'cadence-unqualified',
+    ]);
     assert.equal(lock.state.terminal.cause, 'cadence-unqualified');
     assert.equal(lock.state.terminalDraft.cause, 'cadence-unqualified');
     assert.deepEqual(lock.state.terminalDraft.attempts.map(({ generationId }) => generationId),
@@ -1468,7 +1479,9 @@ test('T4-FIRST-CAUSE-EFFECT-FAILURES owns exact callbacks and tears down only af
   assert.equal(resumeSucceeded.state.phase, 'tracking');
   assert.equal(resumeSucceeded.state.pendingResume, null);
   assert.equal(resumeSucceeded.state.resumeEffectId, null);
-  assert.deepEqual(resumeSucceeded.state.pendingEffects, []);
+  assert.deepEqual(resumeSucceeded.state.pendingEffects, [
+    firstTap.effects.find(({ effectType }) => effectType === 'schedule-acknowledgment'),
+  ]);
   assert.equal(resumeSucceeded.state.estimatorSnapshot, firstTap.state.estimatorSnapshot);
   assert.deepEqual(resumeSucceeded.effects, []);
   assertNoOp(
@@ -1525,7 +1538,7 @@ test('T4-FIRST-CAUSE-EFFECT-FAILURES owns exact callbacks and tears down only af
   ]);
   assert.equal(cleanupFailed.state.terminalDraft, resumeFailure.state.terminalDraft);
   assert.equal(cleanupFailed.state.evidence.status, 'pending');
-  assert.equal(cleanupFailed.state.resourceDisposition, 'released-with-cleanup-failure');
+  assert.equal(cleanupFailed.state.resourceDisposition, 'release-failed');
 
   const armed = armCadenceAtBpm(110);
   const handoff = reduceSession(armed, lockDeadlineEvent(armed));
@@ -1537,7 +1550,7 @@ test('T4-FIRST-CAUSE-EFFECT-FAILURES owns exact callbacks and tears down only af
     effectType: 'commit-handoff-plan',
   });
   assert.deepEqual(handoff.state.pendingEffects, [
-    armed.pendingEffects[0],
+    ...armed.pendingEffects,
     commitEffect,
   ]);
   assertNoOp(reduceSession(handoff.state, {
@@ -1588,7 +1601,13 @@ test('T4-FIRST-CAUSE-EFFECT-FAILURES owns exact callbacks and tears down only af
     audioNow: 6,
   })).state;
   assert.equal(newer.activeGenerationId, 2);
-  assertNoOp(reduceSession(newer, effectSucceeded(resumeEffect)), newer);
+  const retiredSuccessDuringNewGeneration = reduceSession(
+    newer,
+    effectSucceeded(resumeEffect),
+  );
+  assert.equal(retiredSuccessDuringNewGeneration.state.activeGenerationId, 2);
+  assert.deepEqual(retiredSuccessDuringNewGeneration.state.retiredResumes, []);
+  assert.deepEqual(retiredSuccessDuringNewGeneration.effects, []);
 });
 
 test('T4-RUNTIME-INTERRUPTION freezes the serial winner before generation or application cleanup', () => {
@@ -1618,10 +1637,14 @@ test('T4-RUNTIME-INTERRUPTION freezes the serial winner before generation or app
     reduceSession(interrupted.state, { type: 'unexpected-context-closed' }),
     interrupted.state,
   );
-  assertNoOp(reduceSession(
+  const lateResumeFailure = reduceSession(
     interrupted.state,
-    effectFailed(armed.pendingEffects[0], 'context-resume-failed'),
-  ), interrupted.state);
+    effectFailed(armed.pendingResume, 'context-resume-failed'),
+  );
+  assert.equal(lateResumeFailure.state.phase, 'interrupted');
+  assert.equal(lateResumeFailure.state.terminal.cause, 'runtime-context-interrupted');
+  assert.equal(lateResumeFailure.state.pendingResume, null);
+  assert.deepEqual(lateResumeFailure.effects, []);
 
   const foregroundEarly = reduceSession(interrupted.state, {
     type: 'foreground-restored',
@@ -2003,8 +2026,56 @@ test('T4-SMOKE-CANCELLATION-PROBE requires a later tap and exactly settles repla
     });
     assert.deepEqual(probing.state.pendingEffects, [
       probing.effects[0],
+      probing.effects[1],
       probeEffect,
     ]);
+    const acknowledgmentFailure = reduceSession(
+      probing.state,
+      effectFailed(probing.effects[1], 'schedule-failed'),
+    );
+    assert.equal(acknowledgmentFailure.state.phase, 'terminating-failure');
+    assert.equal(acknowledgmentFailure.state.terminal.cause, 'trial-cancelled');
+    assert.deepEqual(acknowledgmentFailure.state.terminal.diagnostics, [
+      { cause: 'schedule-failed' },
+    ]);
+    assert.equal(acknowledgmentFailure.state.terminalDraft, probing.state.terminalDraft);
+    assert.deepEqual(
+      acknowledgmentFailure.effects.map(({ effectType }) => effectType),
+      ['terminate-generation'],
+    );
+    assert.equal(acknowledgmentFailure.effects[0].payload.reason, 'schedule-failed');
+
+    const resumeFailure = reduceSession(
+      probing.state,
+      effectFailed(probing.effects[0], 'context-resume-failed'),
+    );
+    assert.equal(resumeFailure.state.phase, 'terminating-failure');
+    assert.equal(resumeFailure.state.terminal.cause, 'trial-cancelled');
+    assert.deepEqual(resumeFailure.state.terminal.diagnostics, [
+      { cause: 'context-resume-failed' },
+    ]);
+    assert.equal(resumeFailure.state.terminalDraft, probing.state.terminalDraft);
+    assert.equal(resumeFailure.state.evidence, probing.state.evidence);
+    assert.deepEqual(
+      resumeFailure.effects.map(({ effectType }) => effectType),
+      ['application-teardown'],
+    );
+    assert.equal(resumeFailure.effects[0].payload.reason, 'context-resume-failed');
+    const resumeFailureSettled = reduceSession(
+      resumeFailure.state,
+      teardownSettlement(resumeFailure.state),
+    );
+    assert.equal(resumeFailureSettled.state.phase, 'evidence-pending');
+    assert.equal(resumeFailureSettled.state.loadedSessionId, null);
+    assert.equal(resumeFailureSettled.state.activeGenerationId, null);
+    assert.equal(resumeFailureSettled.state.terminal.cause, 'trial-cancelled');
+    assert.deepEqual(resumeFailureSettled.state.terminal.diagnostics, [
+      { cause: 'context-resume-failed' },
+    ]);
+    assertNoOp(reduceSession(
+      resumeFailureSettled.state,
+      effectFailed(probing.effects[0], 'context-resume-failed'),
+    ), resumeFailureSettled.state);
     assertNoOp(reduceSession(probing.state, replacementTap), probing.state);
 
     const staleProbeSettlement = {
@@ -2138,6 +2209,20 @@ test('T4-EVIDENCE-RESET-ADVANCEMENT gates warmed context and preserves paired au
     'application-teardown',
   ]);
   assert.equal(warmedReset.effects[0].payload.reason, 'protocol-reset');
+  const failedWarmedRelease = reduceSession(
+    warmedReset.state,
+    teardownSettlement(warmedReset.state, {
+      status: 'failed',
+      cause: 'context-close-failed',
+    }),
+  );
+  assert.equal(failedWarmedRelease.state.phase, 'error');
+  assert.equal(failedWarmedRelease.state.recoveryAction, 'reload');
+  assert.equal(failedWarmedRelease.state.resourceDisposition, 'release-failed');
+  assertNoOp(
+    reduceSession(failedWarmedRelease.state, { type: 'choose-track' }),
+    failedWarmedRelease.state,
+  );
   const warmedReleased = reduceSession(
     warmedReset.state,
     teardownSettlement(warmedReset.state),
@@ -2198,4 +2283,323 @@ test('T4-EVIDENCE-RESET-ADVANCEMENT gates warmed context and preserves paired au
     verdict: 'intentional',
     downloaded: false,
   }), TypeError);
+});
+
+test('T4-REVIEW-PROVENANCE-CLOSURE rejects forged authorities and malformed settlement headers', () => {
+  const forgedWarmedContext = Object.freeze({
+    runValue: 'session-1',
+    session: 'session-1',
+    slot: 2,
+    thermalState: 'warmed',
+    assignedClass: 'LOW_EDGE',
+    recordKind: 'scored',
+    cancellationPhase: null,
+    scored: true,
+    contextFrozenAtFirstAcceptedTap: false,
+  });
+  assert.throws(
+    () => createInitialSessionState(forgedWarmedContext),
+    /genuine run context/,
+  );
+
+  const counterfeitPlan = Object.freeze({
+    generationId: 'generation-1',
+    assetIdentity: ASSET_IDENTITY,
+    experimentConfigIdentity: EXPERIMENT_CONFIG_IDENTITY,
+  });
+  assert.throws(() => createDeclarativeEffect({
+    sessionId: 'session-1',
+    generationId: 1,
+    effectId: 1,
+    effectType: 'commit-handoff-plan',
+    payload: { plan: counterfeitPlan },
+  }), /genuine handoff plan/);
+
+  const tracking = reduceSession(readyState(), tapEvent({
+    eventTimestampMs: 1_000,
+    audioNow: 5,
+  })).state;
+  const settling = reduceSession(tracking, {
+    type: 'idle-deadline',
+    sessionId: tracking.sessionId,
+    generationId: tracking.activeGenerationId,
+    deadlineTimestampMs: tracking.silenceDeadlineTimestampMs,
+  }).state;
+  const validSettlement = generationSettlement(settling);
+  for (const malformed of [
+    { ...validSettlement, generationId: 0 },
+    { ...validSettlement, effectType: 'application-teardown' },
+    { ...validSettlement, effectType: 'not-a-closed-effect-type' },
+  ]) {
+    assert.throws(
+      () => reduceSession(settling, malformed),
+      /cleanup settlement ownership is invalid/,
+    );
+  }
+});
+
+test('T4-REVIEW-EVIDENCE-CONTROLS uses the approved verdict enum and permits resolved Unload', () => {
+  const firstTap = reduceSession(readyState(), tapEvent({
+    eventTimestampMs: 1_000,
+    audioNow: 5,
+  })).state;
+  const terminating = reduceSession(firstTap, tapEvent({
+    eventTimestampMs: 1_000,
+    audioNow: 5.1,
+  })).state;
+  const evidencePending = reduceSession(
+    terminating,
+    generationSettlement(terminating),
+  ).state;
+  assert.equal(evidencePending.phase, 'evidence-pending');
+
+  const receiptId = evidencePending.evidence.terminalRecordReceiptId;
+  assert.throws(() => reduceSession(evidencePending, {
+    type: 'evidence-resolved',
+    terminalRecordReceiptId: receiptId,
+    verdict: 'not-intentional',
+    downloaded: true,
+  }), /closed verdict/);
+  const resolved = reduceSession(evidencePending, {
+    type: 'evidence-resolved',
+    terminalRecordReceiptId: receiptId,
+    verdict: 'mechanical',
+    downloaded: true,
+  });
+  assert.equal(resolved.state.phase, 'evidence-resolved');
+  assert.equal(resolved.state.evidence.verdict, 'mechanical');
+
+  const unloading = reduceSession(resolved.state, { type: 'unload-track' });
+  assert.equal(unloading.state.phase, 'teardown-in-progress');
+  assert.equal(unloading.state.teardown.reason, 'unload-track');
+  assert.deepEqual(unloading.effects.map(({ effectType }) => effectType), [
+    'application-teardown',
+  ]);
+});
+
+test('T4-REVIEW-EFFECT-OWNERSHIP reconciles resumes and owns source scheduling failures', () => {
+  const firstTap = reduceSession(readyState(), tapEvent({
+    eventTimestampMs: 1_000,
+    audioNow: 5,
+  }));
+  const resumeEffect = firstTap.effects.find(({ effectType }) => effectType === 'resume-context');
+  const acknowledgmentEffect = firstTap.effects.find(
+    ({ effectType }) => effectType === 'schedule-acknowledgment',
+  );
+  assert.ok(resumeEffect);
+  assert.ok(acknowledgmentEffect);
+
+  const settling = reduceSession(firstTap.state, {
+    type: 'idle-deadline',
+    sessionId: firstTap.state.sessionId,
+    generationId: firstTap.state.activeGenerationId,
+    deadlineTimestampMs: firstTap.state.silenceDeadlineTimestampMs,
+  }).state;
+  const resumeBeforeCleanup = reduceSession(settling, effectSucceeded(resumeEffect));
+  assert.equal(resumeBeforeCleanup.state.phase, 'generation-settling');
+  assert.equal(resumeBeforeCleanup.state.pendingResume, null);
+  assert.deepEqual(resumeBeforeCleanup.effects.map(({ effectType }) => effectType), [
+    'reconcile-stale-resume',
+  ]);
+  assert.deepEqual(resumeBeforeCleanup.effects[0].payload, {
+    loadedSessionId: 'loaded-session-1',
+    staleGenerationId: 1,
+    currentGenerationId: null,
+  });
+  const settledAfterResume = reduceSession(
+    resumeBeforeCleanup.state,
+    generationSettlement(resumeBeforeCleanup.state),
+  );
+  assert.deepEqual(settledAfterResume.state.retiredResumes, []);
+
+  const settledBeforeResume = reduceSession(
+    settling,
+    generationSettlement(settling),
+  );
+  assert.equal(settledBeforeResume.state.retiredResumes.length, 1);
+  const resumeAfterCleanup = reduceSession(
+    settledBeforeResume.state,
+    effectSucceeded(resumeEffect),
+  );
+  assert.deepEqual(resumeAfterCleanup.state.retiredResumes, []);
+  assert.deepEqual(resumeAfterCleanup.effects.map(({ effectType }) => effectType), [
+    'reconcile-stale-resume',
+  ]);
+
+  const newerGeneration = reduceSession(settledBeforeResume.state, tapEvent({
+    eventTimestampMs: 2_000,
+    audioNow: 6,
+  })).state;
+  const oldResumeDuringNewGeneration = reduceSession(
+    newerGeneration,
+    effectSucceeded(resumeEffect),
+  );
+  assert.deepEqual(oldResumeDuringNewGeneration.state.retiredResumes, []);
+  assert.deepEqual(oldResumeDuringNewGeneration.effects, []);
+
+  const schedulingFailure = reduceSession(
+    firstTap.state,
+    effectFailed(acknowledgmentEffect, 'schedule-failed'),
+  );
+  assert.equal(schedulingFailure.state.phase, 'terminating-failure');
+  assert.equal(schedulingFailure.state.terminal.cause, 'schedule-failed');
+  assert.deepEqual(schedulingFailure.effects.map(({ effectType }) => effectType), [
+    'capture-terminal-draft',
+    'cancel-deadline',
+    'terminate-generation',
+  ]);
+
+  const schedulingSuccess = reduceSession(
+    firstTap.state,
+    effectSucceeded(acknowledgmentEffect),
+  );
+  assert.deepEqual(schedulingSuccess.effects, []);
+  assertNoOp(reduceSession(
+    schedulingSuccess.state,
+    effectFailed(acknowledgmentEffect, 'schedule-failed'),
+  ), schedulingSuccess.state);
+
+  const secondTap = reduceSession(firstTap.state, tapEvent({
+    eventTimestampMs: 1_500,
+    audioNow: 5.5,
+  }));
+  const secondAcknowledgment = secondTap.effects.find(
+    ({ effectType }) => effectType === 'schedule-acknowledgment',
+  );
+  assert.ok(secondAcknowledgment);
+  assert.equal(secondTap.state.pendingEffects.includes(acknowledgmentEffect), false,
+    'the serial coordinator settles the prior scheduling batch before a later activation');
+  assert.equal(secondTap.state.pendingEffects.includes(secondAcknowledgment), true);
+  assertNoOp(reduceSession(
+    secondTap.state,
+    effectFailed(acknowledgmentEffect, 'schedule-failed'),
+  ), secondTap.state);
+  const currentSchedulingFailure = reduceSession(
+    secondTap.state,
+    effectFailed(secondAcknowledgment, 'schedule-failed'),
+  );
+  assert.equal(currentSchedulingFailure.state.phase, 'terminating-failure');
+  assert.equal(currentSchedulingFailure.state.terminal.cause, 'schedule-failed');
+
+  const armed = armCadenceAtBpm(120);
+  const predictionEffect = armed.pendingEffects.find(
+    ({ effectType }) => effectType === 'schedule-predictions',
+  );
+  assert.ok(predictionEffect);
+  const predictionFailure = reduceSession(
+    armed,
+    effectFailed(predictionEffect, 'schedule-failed'),
+  );
+  assert.equal(predictionFailure.state.phase, 'terminating-failure');
+  assert.equal(predictionFailure.state.terminal.cause, 'schedule-failed');
+});
+
+test('T4-REVIEW-FAIL-CLOSED-CLEANUP makes cleanup failure terminal or reload-only', () => {
+  const firstTap = reduceSession(readyState(), tapEvent({
+    eventTimestampMs: 1_000,
+    audioNow: 5,
+  })).state;
+  const settling = reduceSession(firstTap, {
+    type: 'idle-deadline',
+    sessionId: firstTap.sessionId,
+    generationId: firstTap.activeGenerationId,
+    deadlineTimestampMs: firstTap.silenceDeadlineTimestampMs,
+  }).state;
+  const failedGenerationCleanup = reduceSession(
+    settling,
+    generationSettlement(settling, {
+      status: 'failed',
+      cause: 'source-stop-failed',
+    }),
+  );
+  assert.equal(failedGenerationCleanup.state.phase, 'terminating-failure');
+  assert.equal(failedGenerationCleanup.state.terminal.cause, 'schedule-failed');
+  assert.deepEqual(failedGenerationCleanup.state.terminal.diagnostics, [
+    { cause: 'source-stop-failed' },
+  ]);
+  assert.equal(failedGenerationCleanup.state.activeGenerationId, 1);
+  assert.equal(failedGenerationCleanup.state.evidence.status, 'terminal-captured');
+  assert.deepEqual(failedGenerationCleanup.effects.map(({ effectType }) => effectType), [
+    'capture-terminal-draft',
+    'application-teardown',
+  ]);
+  assert.equal(failedGenerationCleanup.effects[0].payload.terminalDraft,
+    failedGenerationCleanup.state.terminalDraft);
+
+  const failedFinalClose = reduceSession(
+    failedGenerationCleanup.state,
+    teardownSettlement(failedGenerationCleanup.state, {
+      status: 'failed',
+      cause: 'context-close-failed',
+    }),
+  );
+  assert.equal(failedFinalClose.state.phase, 'evidence-pending');
+  assert.equal(failedFinalClose.state.recoveryAction, 'reload');
+  assert.equal(failedFinalClose.state.resourceDisposition, 'release-failed');
+  assert.deepEqual(failedFinalClose.state.terminal.diagnostics, [
+    { cause: 'source-stop-failed' },
+    { cause: 'context-close-failed' },
+  ]);
+
+  const cancelledLoading = reduceSession(beginLoading().state, {
+    type: 'cancel-loading',
+  }).state;
+  const failedLoadingClose = reduceSession(
+    cancelledLoading,
+    teardownSettlement(cancelledLoading, {
+      status: 'failed',
+      cause: 'context-close-failed',
+    }),
+  );
+  assert.equal(failedLoadingClose.state.phase, 'error');
+  assert.equal(failedLoadingClose.state.recoveryAction, 'reload');
+  assert.equal(failedLoadingClose.state.resourceDisposition, 'release-failed');
+  assertNoOp(
+    reduceSession(failedLoadingClose.state, { type: 'choose-track' }),
+    failedLoadingClose.state,
+  );
+
+  const unloading = reduceSession(readyState(), { type: 'unload-track' }).state;
+  const failedUnloadClose = reduceSession(
+    unloading,
+    teardownSettlement(unloading, {
+      status: 'failed',
+      cause: 'context-close-failed',
+    }),
+  );
+  assert.equal(failedUnloadClose.state.phase, 'error');
+  assert.equal(failedUnloadClose.state.recoveryAction, 'reload');
+  assert.equal(failedUnloadClose.state.resourceDisposition, 'release-failed');
+  assertNoOp(
+    reduceSession(failedUnloadClose.state, { type: 'choose-track' }),
+    failedUnloadClose.state,
+  );
+});
+
+test('T4-REVIEW-INVALID-TIMING-BOUNDARY keeps non-finite values out of pure events', () => {
+  const active = reduceSession(readyState(), tapEvent({
+    eventTimestampMs: 1_000,
+    audioNow: 5,
+  })).state;
+  assert.throws(() => reduceSession(active, {
+    ...tapEvent({ eventTimestampMs: Number.NaN, audioNow: 5.1 }),
+    mappedTapAudioTime: Number.NaN,
+  }), /tap clock values are invalid/);
+  for (const audioNow of [Number.NaN, Number.POSITIVE_INFINITY, -1]) {
+    assert.throws(() => reduceSession(active, {
+      type: 'tap-timing-invalid',
+      audioNow,
+    }), /teardown clock is invalid/);
+  }
+  const terminated = reduceSession(active, {
+    type: 'tap-timing-invalid',
+    audioNow: 5.1,
+  });
+  assert.equal(terminated.state.phase, 'terminating-failure');
+  assert.equal(terminated.state.terminal.cause, 'tap-timestamp-invalid');
+  assert.deepEqual(terminated.effects.map(({ effectType }) => effectType), [
+    'capture-terminal-draft',
+    'cancel-deadline',
+    'terminate-generation',
+  ]);
 });

@@ -1,5 +1,5 @@
 import { assertBuildIdentity } from '../build-identity.mjs';
-import { ASSET_IDENTITY, EXPERIMENT_CONFIG_IDENTITY } from '../config.mjs';
+import { assertHandoffPlan } from './handoff-planner.mjs';
 
 const LOCAL_BUILD_SHA = '__BUILD_SHA__';
 const MAX_IDENTIFIER_LENGTH = 128;
@@ -81,6 +81,7 @@ const TEARDOWN_REASONS = Object.freeze([
   'unload-track',
   'unexpected-context-closed',
   'context-resume-failed',
+  'generation-cleanup-failed',
   'runtime-context-closed',
   'startup-timeout',
   'protocol-reset',
@@ -385,7 +386,7 @@ function validateTerminalDraft(candidate) {
       'terminal draft attempt',
     );
     if (!isRecursivelyFrozenPureData(attemptCandidate)
-        || attempt.outcome !== 'no-match'
+        || attempt.outcome !== 'cadence-unqualified'
         || !Number.isSafeInteger(attempt.generationId)
         || attempt.generationId <= 0
         || !Number.isFinite(attempt.estimatedBpmExact)
@@ -414,7 +415,7 @@ function validateTerminalDraft(candidate) {
   return candidate;
 }
 
-function validatePayload(effectType, candidate) {
+function validatePayload(effectType, candidate, effectGenerationId) {
   const keys = PAYLOAD_KEYS[effectType];
   const values = readExactOrdinaryDataRecord(candidate, keys, `${effectType} payload`);
   if (effectType === 'begin-track-load') {
@@ -465,16 +466,9 @@ function validatePayload(effectType, candidate) {
       throw new TypeError('terminate-generation payload is invalid');
     }
   } else if (effectType === 'commit-handoff-plan') {
-    copyPureData(values.plan);
-    const planDescriptors = values.plan === null || typeof values.plan !== 'object'
-      ? null
-      : Object.getOwnPropertyDescriptors(values.plan);
-    if (!isRecursivelyFrozenPureData(values.plan)
-        || planDescriptors === null
-        || planDescriptors.assetIdentity?.value !== ASSET_IDENTITY
-        || planDescriptors.experimentConfigIdentity?.value !== EXPERIMENT_CONFIG_IDENTITY
-        || !isBoundedIdentifier(planDescriptors.generationId?.value)) {
-      throw new TypeError('commit-handoff-plan requires the immutable locked planner authority');
+    assertHandoffPlan(values.plan);
+    if (values.plan.generationId !== `generation-${effectGenerationId}`) {
+      throw new TypeError('commit-handoff-plan generation ownership is invalid');
     }
     return Object.freeze({ plan: values.plan });
   } else if (effectType === 'reconcile-stale-resume') {
@@ -511,7 +505,7 @@ function readEffect(candidate, requireFrozen) {
       || !EFFECT_TYPES.includes(values.effectType)) {
     throw new TypeError('effect header is invalid');
   }
-  const payload = validatePayload(values.effectType, values.payload);
+  const payload = validatePayload(values.effectType, values.payload, values.generationId);
   if (requireFrozen && !isRecursivelyFrozenPureData(candidate)) {
     throw new TypeError('effect must be recursively frozen');
   }
