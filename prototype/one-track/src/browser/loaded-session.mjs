@@ -44,10 +44,10 @@ function createSignal() {
 }
 
 function captureThenable(value) {
-  if (value instanceof Promise) return value;
+  if (!isObject(value)) return null;
   let then;
   try {
-    then = value?.then;
+    then = value.then;
   } catch {
     return null;
   }
@@ -57,6 +57,31 @@ function captureThenable(value) {
       then.call(value, resolve, reject);
     } catch (error) {
       reject(error);
+    }
+  });
+}
+
+function adoptCallbackOperation(value) {
+  if (!isObject(value)) {
+    return Promise.resolve({ kind: 'value', value });
+  }
+  let then;
+  try {
+    then = value.then;
+  } catch (error) {
+    return Promise.resolve({ kind: 'callback-failed', error });
+  }
+  if (typeof then !== 'function') {
+    return Promise.resolve({ kind: 'value', value });
+  }
+  return new Promise((resolve) => {
+    try {
+      Reflect.apply(then, value, [
+        (resolvedValue) => resolve({ kind: 'value', value: resolvedValue }),
+        (error) => resolve({ kind: 'callback-failed', error }),
+      ]);
+    } catch (error) {
+      resolve({ kind: 'callback-failed', error });
     }
   });
 }
@@ -142,22 +167,26 @@ function assertNoOwnedResourceAlias(candidate, ownedContext, ownedBuffer) {
   }
 }
 
-function createBorrowResources(state, borrow) {
+function createBorrowResources(state, borrow, resumeSettlement) {
   const resources = {};
   Object.defineProperties(resources, {
     context: {
       enumerable: true,
       get() {
-        if (!borrow.active || state.unloaded) fail('borrow-expired');
+        if (!borrow.resourcesActive || state.unloaded) fail('borrow-expired');
         return state.context;
       },
     },
     buffer: {
       enumerable: true,
       get() {
-        if (!borrow.active || state.unloaded) fail('borrow-expired');
+        if (!borrow.resourcesActive || state.unloaded) fail('borrow-expired');
         return state.buffer;
       },
+    },
+    resumeSettlement: {
+      enumerable: true,
+      value: resumeSettlement,
     },
   });
   return Object.freeze(resources);
@@ -221,6 +250,7 @@ function beginUnload(state, reason) {
   state.lifecycleInvalidation.resolve();
   if (state.activeBorrow !== null) {
     state.activeBorrow.active = false;
+    state.activeBorrow.resourcesActive = false;
     state.activeBorrow.invalidation.resolve();
     state.activeBorrow = null;
   }
@@ -307,7 +337,9 @@ async function borrowForGeneration(generationId, callback) {
     beginUnload(state, 'unexpected-context-close');
     fail('loaded-session-unloaded');
   }
-  if (state.activeBorrow !== null) fail('parallel-generation-borrow');
+  if (state.pendingSuspend !== null || state.activeBorrow !== null) {
+    fail('parallel-generation-borrow');
+  }
   if (state.latestGenerationId !== null && generationId < state.latestGenerationId) {
     fail('stale-generation-borrow');
   }
@@ -315,10 +347,15 @@ async function borrowForGeneration(generationId, callback) {
   const isNewGeneration = generationId !== state.latestGenerationId;
   if (isNewGeneration) state.latestGenerationId = generationId;
   const requiresResume = generationId !== state.resumedGenerationId;
+  const resumeAuthorityEpoch = state.resumeAuthorityEpoch;
   const invalidation = createSignal();
-  const borrow = { active: true, invalidation };
+  const borrow = {
+    active: true,
+    resourcesActive: true,
+    callbackSettled: false,
+    invalidation,
+  };
   state.activeBorrow = borrow;
-  const resources = createBorrowResources(state, borrow);
 
   let resumeOutcome = Promise.resolve({ kind: 'value' });
   if (requiresResume) {
@@ -330,6 +367,23 @@ async function borrowForGeneration(generationId, callback) {
     }
     resumeOutcome = settledOperation(resumeOperation, 'context-resume-failed');
   }
+  const resumeSettlement = Promise.race([
+    resumeOutcome,
+    invalidation.promise.then(() => ({ kind: 'invalidated' })),
+  ]).then((outcome) => {
+    if (outcome.kind === 'invalidated' || state.unloaded) fail('loaded-session-unloaded');
+    if (outcome.kind === 'failed') throw outcome.error;
+    if (requiresResume && state.resumeAuthorityEpoch === resumeAuthorityEpoch) {
+      state.resumedGenerationId = generationId;
+    }
+    return true;
+  });
+  borrow.resumeSettlement = resumeSettlement;
+  const resources = createBorrowResources(state, borrow, resumeSettlement);
+  const borrowResumeOutcome = resumeSettlement.then(
+    () => ({ kind: 'value' }),
+    (error) => ({ kind: 'failed', error }),
+  );
 
   let callbackOperation;
   try {
@@ -337,14 +391,14 @@ async function borrowForGeneration(generationId, callback) {
   } catch (error) {
     callbackOperation = Promise.reject(error);
   }
-  const callbackOutcome = Promise.resolve(callbackOperation).then(
-    (value) => ({ kind: 'value', value }),
-    (error) => ({ kind: 'callback-failed', error }),
-  );
+  const callbackOutcome = adoptCallbackOperation(callbackOperation).finally(() => {
+    borrow.resourcesActive = false;
+    borrow.callbackSettled = true;
+  });
 
   try {
     const outcome = await Promise.race([
-      Promise.all([resumeOutcome, callbackOutcome]).then((values) => ({
+      Promise.all([borrowResumeOutcome, callbackOutcome]).then((values) => ({
         kind: 'settled',
         resume: values[0],
         callback: values[1],
@@ -353,12 +407,12 @@ async function borrowForGeneration(generationId, callback) {
     ]);
     if (outcome.kind === 'invalidated' || state.unloaded) fail('loaded-session-unloaded');
     if (outcome.resume.kind === 'failed') throw outcome.resume.error;
-    if (requiresResume) state.resumedGenerationId = generationId;
     if (outcome.callback.kind === 'callback-failed') throw outcome.callback.error;
     assertNoOwnedResourceAlias(outcome.callback.value, state.context, state.buffer);
     return outcome.callback.value;
   } finally {
     borrow.active = false;
+    borrow.resourcesActive = false;
     if (state.activeBorrow === borrow) state.activeBorrow = null;
   }
 }
@@ -367,25 +421,51 @@ async function suspend(reason) {
   const state = stateForReceiver(this);
   assertReason(reason);
   if (state.unloaded) fail('loaded-session-unloaded');
-  if (state.activeBorrow !== null) fail('parallel-generation-borrow');
+  if (state.pendingSuspend !== null) return state.pendingSuspend.promise;
+  if (state.activeBorrow !== null && !state.activeBorrow.callbackSettled) {
+    fail('parallel-generation-borrow');
+  }
   if (readContextState(state.context) === 'closed') {
     beginUnload(state, 'unexpected-context-close');
     fail('loaded-session-unloaded');
   }
-  let operation;
-  try {
-    operation = state.context.suspend();
-  } catch {
-    operation = null;
-  }
-  const outcome = await Promise.race([
-    settledOperation(operation, 'context-suspend-failed'),
-    state.lifecycleInvalidation.promise.then(() => ({ kind: 'invalidated' })),
-  ]);
-  if (outcome.kind === 'invalidated') fail('loaded-session-unloaded');
-  if (outcome.kind === 'failed') throw outcome.error;
-  if (state.unloaded) fail('loaded-session-unloaded');
-  return true;
+
+  const resumeBarrier = state.activeBorrow?.resumeSettlement ?? Promise.resolve(true);
+  const pending = { promise: null };
+  state.resumeAuthorityEpoch += 1;
+  state.resumedGenerationId = null;
+  state.pendingSuspend = pending;
+  pending.promise = (async () => {
+    try {
+      try {
+        await resumeBarrier;
+      } catch {
+        // A failed/stale resume still requires a best-effort physical suspend.
+      }
+      if (state.unloaded) fail('loaded-session-unloaded');
+      if (readContextState(state.context) === 'closed') {
+        beginUnload(state, 'unexpected-context-close');
+        fail('loaded-session-unloaded');
+      }
+      let operation;
+      try {
+        operation = state.context.suspend();
+      } catch {
+        operation = null;
+      }
+      const outcome = await Promise.race([
+        settledOperation(operation, 'context-suspend-failed'),
+        state.lifecycleInvalidation.promise.then(() => ({ kind: 'invalidated' })),
+      ]);
+      if (outcome.kind === 'invalidated') fail('loaded-session-unloaded');
+      if (outcome.kind === 'failed') throw outcome.error;
+      if (state.unloaded) fail('loaded-session-unloaded');
+      return true;
+    } finally {
+      if (state.pendingSuspend === pending) state.pendingSuspend = null;
+    }
+  })();
+  return pending.promise;
 }
 
 function resetAfterEvidence() {
@@ -430,7 +510,9 @@ export function acceptValidatedLoadReceipt(receipt) {
     onOwnerRelease: payload.onOwnerRelease,
     latestGenerationId: null,
     resumedGenerationId: null,
+    resumeAuthorityEpoch: 0,
     activeBorrow: null,
+    pendingSuspend: null,
     lifecycleInvalidation: createSignal(),
     allocationFrozen: false,
     unloaded: false,

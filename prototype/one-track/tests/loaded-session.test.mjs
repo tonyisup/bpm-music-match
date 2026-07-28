@@ -69,6 +69,105 @@ test('T7-CAPABILITY is opaque, closed, genuine-only, and cannot be publicly mint
   );
 });
 
+test('T7-GENERATION-LIFETIME exposes resume settlement while one borrow remains owned until callback lifetime release', async () => {
+  const loaded = await loadSession({ resumeMode: 'deferred' });
+  const lifetime = deferred();
+  let resumeSettlement;
+  let borrowSettled = false;
+  const borrow = loaded.capability.borrowForGeneration(1, (resources) => {
+    assert.deepEqual(Object.keys(resources), ['context', 'buffer', 'resumeSettlement']);
+    resumeSettlement = resources.resumeSettlement;
+    return lifetime.promise;
+  }).finally(() => { borrowSettled = true; });
+  await flushMicrotasks(4);
+  assert.equal(borrowSettled, false);
+  await expectSessionCode(
+    loaded.capability.borrowForGeneration(1, () => undefined),
+    'parallel-generation-borrow',
+  );
+  await expectSessionCode(loaded.capability.suspend('premature-suspend'), 'parallel-generation-borrow');
+  loaded.resumeOperations[0].resolve();
+  assert.equal(await resumeSettlement, true);
+  await flushMicrotasks(4);
+  assert.equal(borrowSettled, false);
+  lifetime.resolve('released');
+  assert.equal(await borrow, 'released');
+});
+
+test('T7-GENERATION-LIFETIME expires resources with callback lifetime, reads callback thenables once, and revokes resume authority after suspend', async () => {
+  {
+    const loaded = await loadSession({ resumeMode: 'deferred' });
+    let retained;
+    const borrow = loaded.capability.borrowForGeneration(1, (resources) => {
+      retained = resources;
+      return undefined;
+    });
+    await flushMicrotasks(4);
+    assert.throws(() => retained.context, /expired/);
+    assert.throws(() => retained.buffer, /expired/);
+    loaded.resumeOperations[0].resolve();
+    await borrow;
+  }
+  {
+    const loaded = await loadSession();
+    let reads = 0;
+    const marker = new Error('callback-then-accessor-marker');
+    await assert.rejects(
+      loaded.capability.borrowForGeneration(1, () => Object.defineProperty({}, 'then', {
+        get() {
+          reads += 1;
+          if (reads === 1) throw marker;
+          return (resolve) => resolve('unexpected-success');
+        },
+      })),
+      (error) => error === marker,
+    );
+    assert.equal(reads, 1);
+
+    reads = 0;
+    await expectSessionCode(
+      loaded.capability.borrowForGeneration(1, () => Object.defineProperty({}, 'then', {
+        enumerable: true,
+        get() {
+          reads += 1;
+          if (reads === 1) return undefined;
+          return (resolve) => resolve('unexpected-second-read');
+        },
+      })),
+      'borrow-result-invalid',
+    );
+    assert.equal(reads, 1);
+  }
+  {
+    const loaded = await loadSession({ resumeMode: 'deferred', suspendMode: 'deferred' });
+    let resumeSettlement;
+    const firstBorrow = loaded.capability.borrowForGeneration(1, (resources) => {
+      resumeSettlement = resources.resumeSettlement;
+      return undefined;
+    });
+    await flushMicrotasks(4);
+    const suspension = loaded.capability.suspend('stale-generation-resume');
+    assert.equal(loaded.events.filter(({ type }) => type === 'suspend').length, 0);
+    await expectSessionCode(
+      loaded.capability.borrowForGeneration(1, () => undefined),
+      'parallel-generation-borrow',
+    );
+    loaded.resumeOperations[0].resolve();
+    await resumeSettlement;
+    await flushMicrotasks(4);
+    assert.equal(loaded.events.filter(({ type }) => type === 'suspend').length, 1);
+    await expectSessionCode(
+      loaded.capability.borrowForGeneration(1, () => undefined),
+      'parallel-generation-borrow',
+    );
+    loaded.suspendOperations[0].resolve();
+    await suspension;
+    await firstBorrow;
+    await loaded.capability.borrowForGeneration(1, () => undefined);
+    assert.equal(loaded.events.filter(({ type }) => type === 'resume').length, 2);
+  }
+});
+
 test('T7-BORROW resumes once per generation, runs callbacks synchronously, blocks parallel/stale use, and invalidates after settlement', async () => {
   const loaded = await loadSession();
   const order = [];
