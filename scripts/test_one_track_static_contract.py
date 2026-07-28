@@ -92,14 +92,18 @@ const browserIdentifiers = new Set([
 ]);
 const globalCapabilityRoots = new Set(['globalThis', 'window', 'self', 'navigator']);
 
-function staticPropertyName(node) {
-  if (!node.computed && node.property.type === 'Identifier') {
-    return node.property.name;
+function staticKeyName(key, computed) {
+  if (!computed && key.type === 'Identifier') {
+    return key.name;
   }
-  if (node.computed && node.property.type === 'Literal') {
-    return node.property.value;
+  if (key.type === 'Literal') {
+    return key.value;
   }
   return null;
+}
+
+function staticPropertyName(node) {
+  return staticKeyName(node.property, node.computed);
 }
 
 function rootIdentifierName(node) {
@@ -148,9 +152,7 @@ for (const [identifier, source] of Object.entries(sources)) {
       if (property.type === 'RestElement') {
         continue;
       }
-      const propertyName = property.computed
-        ? (property.key.type === 'Literal' ? property.key.value : null)
-        : property.key.name;
+      const propertyName = staticKeyName(property.key, property.computed);
       classifyCapabilityName(propertyName);
       const nestedPattern = property.value.type === 'AssignmentPattern'
         ? property.value.left
@@ -413,6 +415,7 @@ export function assertLocalBuildIdentity() {{
             "export const Socket = globalThis.WebSocket;",
             "const { sendBeacon } = navigator; export { sendBeacon };",
             "const { fetch: request } = globalThis; export { request };",
+            "const { 'fetch': request } = globalThis; export { request };",
         ]
         for body in bodies:
             with self.subTest(body=body), tempfile.TemporaryDirectory() as temporary_directory:
@@ -444,6 +447,7 @@ export function assertLocalBuildIdentity() {{
             "export function invalid(file) { return file instanceof File; }",
             "export const now = globalThis.performance.now();",
             "const { performance } = globalThis; export const now = performance.now();",
+            "const { 'performance': clock } = globalThis; export const now = clock.now();",
             "export const FileType = globalThis.File;",
         ]
         for body in pure_boundary_violations:
