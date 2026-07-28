@@ -246,23 +246,46 @@ export function deriveHandoffTrackBounds(authorityInput) {
     }
   }
 
+  for (const key of ['leadInBeats', 'crossfadeEndBeat', 'curatedDownbeatBeat']) {
+    if (!Number.isSafeInteger(values[key])) {
+      throw new TypeError('handoff beat positions must be positive safe integers');
+    }
+  }
+  if (values.curatedDownbeatBeat !== values.leadInBeats + 1
+      || values.crossfadeEndBeat <= values.curatedDownbeatBeat) {
+    throw new HandoffPlannerFailure(
+      'timeline-geometry-invalid',
+      'handoff timeline requires the curated downbeat after every lead-in beat and crossfade end after the curated downbeat',
+    );
+  }
+
   const handoffBeatDurationSeconds = 60 / values.handoffBpm;
   if (!Number.isFinite(handoffBeatDurationSeconds) || handoffBeatDurationSeconds <= 0) {
     throw new TypeError('handoffBpm must produce a finite positive beat duration');
   }
   const trackStartOffsetSeconds = values.targetEntryDownbeatSeconds
     - values.leadInBeats * handoffBeatDurationSeconds;
+  const naturalTrackEndRelativeToBeat1Seconds = values.decodedDurationSeconds
+    - trackStartOffsetSeconds;
+  const minimumRequiredEndRelativeToBeat1Seconds = (values.crossfadeEndBeat - 1)
+    * handoffBeatDurationSeconds
+    + values.minimumPostCrossfadeTailSeconds;
+  const minimumDecodedDurationSeconds = values.targetEntryDownbeatSeconds
+    + (values.crossfadeEndBeat - values.curatedDownbeatBeat)
+      * handoffBeatDurationSeconds
+    + values.minimumPostCrossfadeTailSeconds;
+  if (![trackStartOffsetSeconds, naturalTrackEndRelativeToBeat1Seconds,
+    minimumRequiredEndRelativeToBeat1Seconds, minimumDecodedDurationSeconds]
+    .every(Number.isFinite)) {
+    throw new TypeError('handoff track bounds must derive finite timings');
+  }
   if (trackStartOffsetSeconds < 0) {
     throw new HandoffPlannerFailure(
       'negative-track-start-offset',
       'handoff track start offset must be nonnegative',
     );
   }
-  const minimumDecodedDurationSeconds = values.targetEntryDownbeatSeconds
-    + (values.crossfadeEndBeat - values.curatedDownbeatBeat)
-      * handoffBeatDurationSeconds
-    + values.minimumPostCrossfadeTailSeconds;
-  if (minimumDecodedDurationSeconds > values.decodedDurationSeconds) {
+  if (naturalTrackEndRelativeToBeat1Seconds < minimumRequiredEndRelativeToBeat1Seconds) {
     throw new HandoffPlannerFailure(
       'insufficient-track-tail',
       'handoff track must include the minimum post-crossfade continuation',

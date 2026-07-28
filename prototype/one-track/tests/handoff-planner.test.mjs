@@ -594,6 +594,7 @@ test('T3-VALIDATION derives strict frozen track bounds and rejects locked invari
       ...lockedInput,
       targetEntryDownbeatSeconds: 1,
       leadInBeats: 2,
+      curatedDownbeatBeat: 3,
     }),
     (error) => {
       assert.strictEqual(error.constructor, HandoffPlannerFailure);
@@ -613,6 +614,54 @@ test('T3-VALIDATION derives strict frozen track bounds and rejects locked invari
       assert.equal(error.message, 'handoff track must include the minimum post-crossfade continuation');
       return true;
     },
+  );
+  assert.throws(
+    () => plannerModule.deriveHandoffTrackBounds({
+      ...lockedInput,
+      handoffBpm: 60,
+      targetEntryDownbeatSeconds: 10,
+      leadInBeats: 1,
+      crossfadeEndBeat: 8,
+      curatedDownbeatBeat: 5,
+      minimumPostCrossfadeTailSeconds: 2,
+      decodedDurationSeconds: 15,
+    }),
+    (error) => {
+      assert.strictEqual(error.constructor, HandoffPlannerFailure);
+      assert.equal(error.code, 'timeline-geometry-invalid');
+      return true;
+    },
+  );
+  for (const overrides of [
+    { curatedDownbeatBeat: 4 },
+    { crossfadeEndBeat: 5 },
+    { crossfadeEndBeat: 4 },
+  ]) {
+    assert.throws(
+      () => plannerModule.deriveHandoffTrackBounds({ ...lockedInput, ...overrides }),
+      (error) => {
+        assert.strictEqual(error.constructor, HandoffPlannerFailure);
+        assert.equal(error.code, 'timeline-geometry-invalid');
+        return true;
+      },
+    );
+  }
+  for (const overrides of [
+    { leadInBeats: 1.5 },
+    { curatedDownbeatBeat: 5.5 },
+    { crossfadeEndBeat: Number.MAX_VALUE },
+  ]) {
+    assert.throws(
+      () => plannerModule.deriveHandoffTrackBounds({ ...lockedInput, ...overrides }),
+      /beat positions must be positive safe integers/,
+    );
+  }
+  assert.throws(
+    () => plannerModule.deriveHandoffTrackBounds({
+      ...lockedInput,
+      handoffBpm: 1e-306,
+    }),
+    /handoff track bounds must derive finite timings/,
   );
 
   for (const hostile of [
