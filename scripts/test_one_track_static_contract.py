@@ -88,7 +88,36 @@ const browserIdentifiers = new Set([
   'setInterval',
   'requestAnimationFrame',
   ...networkIdentifiers,
+  ...networkMembers,
 ]);
+const globalCapabilityRoots = new Set(['globalThis', 'window', 'self', 'navigator']);
+
+function staticPropertyName(node) {
+  if (!node.computed && node.property.type === 'Identifier') {
+    return node.property.name;
+  }
+  if (node.computed && node.property.type === 'Literal') {
+    return node.property.value;
+  }
+  return null;
+}
+
+function rootIdentifierName(node) {
+  if (!node) {
+    return null;
+  }
+  if (node.type === 'Identifier') {
+    return node.name;
+  }
+  if (node.type === 'ChainExpression') {
+    return rootIdentifierName(node.expression);
+  }
+  if (node.type === 'MemberExpression') {
+    return rootIdentifierName(node.object);
+  }
+  return null;
+}
+
 const analyses = {};
 for (const [identifier, source] of Object.entries(sources)) {
   const ast = acorn.parse(source, {
@@ -100,6 +129,38 @@ for (const [identifier, source] of Object.entries(sources)) {
   const networkCapabilities = new Set();
   const browserCapabilities = new Set();
   let hasDynamicImport = false;
+
+  function classifyCapabilityName(name) {
+    if (networkIdentifiers.has(name) || networkMembers.has(name)) {
+      networkCapabilities.add(name);
+    }
+    if (browserIdentifiers.has(name)) {
+      browserCapabilities.add(name);
+    }
+  }
+
+  function classifyObjectPattern(pattern, sourceNode) {
+    if (pattern.type !== 'ObjectPattern'
+        || !globalCapabilityRoots.has(rootIdentifierName(sourceNode))) {
+      return;
+    }
+    for (const property of pattern.properties) {
+      if (property.type === 'RestElement') {
+        continue;
+      }
+      const propertyName = property.computed
+        ? (property.key.type === 'Literal' ? property.key.value : null)
+        : property.key.name;
+      classifyCapabilityName(propertyName);
+      const nestedPattern = property.value.type === 'AssignmentPattern'
+        ? property.value.left
+        : property.value;
+      if (nestedPattern.type === 'ObjectPattern') {
+        classifyObjectPattern(nestedPattern, sourceNode);
+      }
+    }
+  }
+
   walk.simple(ast, {
     ImportDeclaration(node) {
       staticSpecifiers.add(node.source.value);
@@ -119,24 +180,24 @@ for (const [identifier, source] of Object.entries(sources)) {
       if (node.name === 'eval' || node.name === 'Function') {
         codeGenerationTokens.add(node.name);
       }
-      if (networkIdentifiers.has(node.name)) {
-        networkCapabilities.add(node.name);
-      }
-      if (browserIdentifiers.has(node.name)) {
-        browserCapabilities.add(node.name);
-      }
+      classifyCapabilityName(node.name);
+    },
+    VariableDeclarator(node) {
+      classifyObjectPattern(node.id, node.init);
+    },
+    AssignmentExpression(node) {
+      classifyObjectPattern(node.left, node.right);
     },
     MemberExpression(node) {
-      const propertyName = node.computed
-        ? (node.property.type === 'Literal' ? node.property.value : null)
-        : node.property.name;
+      const propertyName = staticPropertyName(node);
       if (propertyName === 'eval'
           || propertyName === 'Function'
           || propertyName === 'constructor') {
         codeGenerationTokens.add(propertyName);
       }
-      if (networkMembers.has(propertyName)) {
-        networkCapabilities.add(propertyName);
+      const rootName = rootIdentifierName(node.object);
+      if (globalCapabilityRoots.has(rootName)) {
+        classifyCapabilityName(propertyName);
       }
     },
   });
@@ -348,6 +409,10 @@ export function assertLocalBuildIdentity() {{
             "export function connect() { return new WebSocket('/socket'); }",
             "export function stream() { return new EventSource('/events'); }",
             "export function transport() { return new WebTransport('/transport'); }",
+            "export const request = globalThis.fetch;",
+            "export const Socket = globalThis.WebSocket;",
+            "const { sendBeacon } = navigator; export { sendBeacon };",
+            "const { fetch: request } = globalThis; export { request };",
         ]
         for body in bodies:
             with self.subTest(body=body), tempfile.TemporaryDirectory() as temporary_directory:
@@ -375,15 +440,31 @@ export function assertLocalBuildIdentity() {{
             )
             self._assert_runtime_graph_fixture(fixture_root)
 
+        pure_boundary_violations = [
+            "export function invalid(file) { return file instanceof File; }",
+            "export const now = globalThis.performance.now();",
+            "const { performance } = globalThis; export const now = performance.now();",
+            "export const FileType = globalThis.File;",
+        ]
+        for body in pure_boundary_violations:
+            with self.subTest(body=body), tempfile.TemporaryDirectory() as temporary_directory:
+                fixture_root = self._copy_source_fixture(temporary_directory)
+                self._write_staged_fixture_module(
+                    fixture_root,
+                    Path("core/tap-estimator.mjs"),
+                    body,
+                )
+                with self.assertRaises(AssertionError):
+                    self._assert_runtime_graph_fixture(fixture_root)
+
         with tempfile.TemporaryDirectory() as temporary_directory:
             fixture_root = self._copy_source_fixture(temporary_directory)
             self._write_staged_fixture_module(
                 fixture_root,
                 Path("core/tap-estimator.mjs"),
-                "export function invalid(file) { return file instanceof File; }",
+                "export const labels = { fetch: 'label', performance: 'metric' };",
             )
-            with self.assertRaises(AssertionError):
-                self._assert_runtime_graph_fixture(fixture_root)
+            self._assert_runtime_graph_fixture(fixture_root)
 
     def test_planned_source_graph_distinguishes_staged_and_test_only_modules(self):
         with tempfile.TemporaryDirectory() as temporary_directory:
