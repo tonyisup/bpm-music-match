@@ -136,10 +136,9 @@ function classifyOwnedSources(ownershipSnapshot, beatTimes, audioNow, oneSampleD
       bridgeSourceIds.push(sourceId);
     } else {
       const matchingBeatIndexes = beatTimes.flatMap((beatTime, index) => {
-        const floatingTolerance = Number.EPSILON
-          * Math.max(1, Math.abs(scheduledAudioTime), Math.abs(beatTime)) * 4;
+        const fixedComparisonToleranceSeconds = Number.EPSILON * 4;
         return Math.abs(scheduledAudioTime - beatTime)
-          <= oneSampleDurationSeconds + floatingTolerance ? [index] : [];
+          <= oneSampleDurationSeconds + fixedComparisonToleranceSeconds ? [index] : [];
       });
       if (matchingBeatIndexes.length === 1) {
         disposition = 'adopt';
@@ -247,6 +246,9 @@ export function deriveHandoffTrackBounds(authorityInput) {
   }
 
   const handoffBeatDurationSeconds = 60 / values.handoffBpm;
+  if (!Number.isFinite(handoffBeatDurationSeconds) || handoffBeatDurationSeconds <= 0) {
+    throw new TypeError('handoffBpm must produce a finite positive beat duration');
+  }
   const trackStartOffsetSeconds = values.targetEntryDownbeatSeconds
     - values.leadInBeats * handoffBeatDurationSeconds;
   if (trackStartOffsetSeconds < 0) {
@@ -294,6 +296,14 @@ function validateHandoffInput(input) {
       throw new TypeError(`${key} must be greater than zero`);
     }
   }
+  const estimatedBeatDurationSeconds = 60 / values.estimatedBpmExact;
+  if (!Number.isFinite(estimatedBeatDurationSeconds) || estimatedBeatDurationSeconds <= 0) {
+    throw new TypeError('estimatedBpmExact must produce a finite positive beat duration');
+  }
+  const oneSampleDurationSeconds = 1 / values.outputSampleRate;
+  if (!Number.isFinite(oneSampleDurationSeconds) || oneSampleDurationSeconds <= 0) {
+    throw new TypeError('outputSampleRate must produce a finite positive sample duration');
+  }
   for (const key of [
     'lastTapAudioTime',
     'candidateBeat1AudioTime',
@@ -308,15 +318,8 @@ function validateHandoffInput(input) {
     throw new TypeError('candidateBeat1AudioTime must be greater than lastTapAudioTime');
   }
   const expectedCandidateBeat1AudioTime = values.lastTapAudioTime
-    + 60 / values.estimatedBpmExact;
-  const phaseTolerance = Number.EPSILON * Math.max(
-    1,
-    Math.abs(values.lastTapAudioTime),
-    Math.abs(values.candidateBeat1AudioTime),
-    Math.abs(expectedCandidateBeat1AudioTime),
-  ) * 16;
-  if (Math.abs(values.candidateBeat1AudioTime - expectedCandidateBeat1AudioTime)
-      > phaseTolerance) {
+    + estimatedBeatDurationSeconds;
+  if (!Object.is(values.candidateBeat1AudioTime, expectedCandidateBeat1AudioTime)) {
     throw new TypeError(
       'candidateBeat1AudioTime must equal lastTapAudioTime + 60 / estimatedBpmExact',
     );

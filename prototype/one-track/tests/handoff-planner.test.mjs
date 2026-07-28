@@ -41,6 +41,21 @@ function assertClose(actual, expected, tolerance = 1e-12) {
   assert.ok(Math.abs(actual - expected) <= tolerance, `${actual} != ${expected}`);
 }
 
+function nextUp(value) {
+  if (Number.isNaN(value) || value === Number.POSITIVE_INFINITY) {
+    return value;
+  }
+  if (Object.is(value, -0)) {
+    return Number.MIN_VALUE;
+  }
+  const view = new DataView(new ArrayBuffer(8));
+  view.setFloat64(0, value, false);
+  let bits = view.getBigUint64(0, false);
+  bits += value >= 0 ? 1n : -1n;
+  view.setBigUint64(0, bits, false);
+  return view.getFloat64(0, false);
+}
+
 function assertRecursivelyFrozen(value) {
   assert.equal(Object.isFrozen(value), true);
   for (const child of Object.values(value)) {
@@ -614,6 +629,13 @@ test('T3-VALIDATION derives strict frozen track bounds and rejects locked invari
     }),
     /decodedDurationSeconds must be finite and greater than zero/,
   );
+  assert.throws(
+    () => plannerModule.deriveHandoffTrackBounds({
+      ...lockedInput,
+      handoffBpm: Number.MIN_VALUE,
+    }),
+    /handoffBpm must produce a finite positive beat duration/,
+  );
 
   let getterCount = 0;
   const accessorBounds = { ...lockedInput };
@@ -624,6 +646,61 @@ test('T3-VALIDATION derives strict frozen track bounds and rejects locked invari
   });
   assert.throws(() => plannerModule.deriveHandoffTrackBounds(accessorBounds), TypeError);
   assert.equal(getterCount, 0);
+});
+
+test('T3-NUMERIC-BOUNDARIES keeps phase exact, limits adoption to one sample, and rejects reciprocal overflow', () => {
+  const largeLastTapAudioTime = 1e14;
+  const estimatedBpmExact = 108;
+  const exactLargeCandidate = largeLastTapAudioTime + 60 / estimatedBpmExact;
+  const largeClockInput = {
+    ...validInput(),
+    estimatedBpmExact,
+    lastTapAudioTime: largeLastTapAudioTime,
+    candidateBeat1AudioTime: exactLargeCandidate,
+    lockDeadlineAudioTime: exactLargeCandidate - 0.2,
+    audioNow: exactLargeCandidate - 0.1,
+  };
+
+  assert.throws(
+    () => createHandoffPlan({
+      ...largeClockInput,
+      candidateBeat1AudioTime: exactLargeCandidate + 0.203125,
+    }),
+    /candidateBeat1AudioTime must equal lastTapAudioTime \+ 60 \/ estimatedBpmExact/,
+  );
+
+  const oneSample = 1 / largeClockInput.outputSampleRate;
+  const largeClockPlan = createHandoffPlan({
+    ...largeClockInput,
+    ownershipSnapshot: ownership([
+      { sourceId: 'exact-beat', scheduledAudioTime: exactLargeCandidate },
+      { sourceId: 'far-outside-sample', scheduledAudioTime: exactLargeCandidate + 0.046875 },
+    ]),
+  });
+  assert.deepEqual(largeClockPlan.adoptedSourceIdsByBeat[0], ['exact-beat']);
+  assert.deepEqual(largeClockPlan.cancelSourceIds, ['far-outside-sample']);
+  assert.ok(0.046875 > oneSample);
+
+  const ordinary = validInput();
+  const exactSampleBoundary = ordinary.candidateBeat1AudioTime + 1 / ordinary.outputSampleRate;
+  const nextRepresentableOutside = nextUp(exactSampleBoundary);
+  const ordinaryPlan = createHandoffPlan(validInput({
+    ownershipSnapshot: ownership([
+      { sourceId: 'inclusive-sample', scheduledAudioTime: exactSampleBoundary },
+      { sourceId: 'next-double-outside', scheduledAudioTime: nextRepresentableOutside },
+    ]),
+  }));
+  assert.deepEqual(ordinaryPlan.adoptedSourceIdsByBeat[0], ['inclusive-sample']);
+  assert.deepEqual(ordinaryPlan.cancelSourceIds, ['next-double-outside']);
+
+  assert.throws(
+    () => createHandoffPlan(validInput({ estimatedBpmExact: Number.MIN_VALUE })),
+    /estimatedBpmExact must produce a finite positive beat duration/,
+  );
+  assert.throws(
+    () => createHandoffPlan(validInput({ outputSampleRate: Number.MIN_VALUE })),
+    /outputSampleRate must produce a finite positive sample duration/,
+  );
 });
 
 test('T3-VALIDATION returns only normative immutable fields after checking plan invariants', () => {
