@@ -74,6 +74,19 @@ const networkIdentifiers = new Set([
   'SharedWorker',
 ]);
 const networkMembers = new Set(['sendBeacon', 'serviceWorker']);
+const persistenceIdentifiers = new Set([
+  'localStorage',
+  'sessionStorage',
+  'indexedDB',
+  'caches',
+  'cookieStore',
+  'Storage',
+  'StorageManager',
+  'IDBFactory',
+  'IDBDatabase',
+  'CacheStorage',
+]);
+const persistenceMembers = new Set(['storage', 'cookie', 'cookieStore']);
 const browserIdentifiers = new Set([
   'window',
   'document',
@@ -83,14 +96,26 @@ const browserIdentifiers = new Set([
   'File',
   'FileReader',
   'Blob',
+  'crypto',
+  'Crypto',
+  'SubtleCrypto',
+  'CryptoKey',
   'performance',
   'setTimeout',
   'setInterval',
   'requestAnimationFrame',
   ...networkIdentifiers,
   ...networkMembers,
+  ...persistenceIdentifiers,
+  ...persistenceMembers,
 ]);
-const globalCapabilityRoots = new Set(['globalThis', 'window', 'self', 'navigator']);
+const globalCapabilityRoots = new Set([
+  'globalThis',
+  'window',
+  'self',
+  'navigator',
+  'document',
+]);
 
 function staticKeyName(key, computed) {
   if (!computed && key.type === 'Identifier') {
@@ -131,12 +156,16 @@ for (const [identifier, source] of Object.entries(sources)) {
   const staticSpecifiers = new Set();
   const codeGenerationTokens = new Set();
   const networkCapabilities = new Set();
+  const persistenceCapabilities = new Set();
   const browserCapabilities = new Set();
   let hasDynamicImport = false;
 
   function classifyCapabilityName(name) {
     if (networkIdentifiers.has(name) || networkMembers.has(name)) {
       networkCapabilities.add(name);
+    }
+    if (persistenceIdentifiers.has(name) || persistenceMembers.has(name)) {
+      persistenceCapabilities.add(name);
     }
     if (browserIdentifiers.has(name)) {
       browserCapabilities.add(name);
@@ -208,6 +237,7 @@ for (const [identifier, source] of Object.entries(sources)) {
     hasDynamicImport,
     codeGenerationTokens: [...codeGenerationTokens],
     networkCapabilities: [...networkCapabilities],
+    persistenceCapabilities: [...persistenceCapabilities],
     browserCapabilities: [...browserCapabilities],
   };
 }
@@ -428,13 +458,41 @@ export function assertLocalBuildIdentity() {{
                 with self.assertRaises(AssertionError):
                     self._assert_runtime_graph_fixture(fixture_root)
 
+    def test_persistence_capabilities_are_rejected_in_every_runtime_module(self):
+        bodies = [
+            "export const persist = (value) => localStorage.setItem('private', value);",
+            "export const storage = globalThis.sessionStorage;",
+            "const { indexedDB } = globalThis; export { indexedDB };",
+            "const { 'caches': cacheStorage } = globalThis; export { cacheStorage };",
+        ]
+        for body in bodies:
+            with self.subTest(body=body), tempfile.TemporaryDirectory() as temporary_directory:
+                fixture_root = self._copy_source_fixture(temporary_directory)
+                self._write_staged_fixture_module(
+                    fixture_root,
+                    Path("browser/coordinator.mjs"),
+                    body,
+                )
+                with self.assertRaises(AssertionError):
+                    self._assert_runtime_graph_fixture(fixture_root)
+
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            fixture_root = self._copy_source_fixture(temporary_directory)
+            self._write_staged_fixture_module(
+                fixture_root,
+                Path("browser/coordinator.mjs"),
+                "export const labels = { localStorage: 'label', caches: 'label' };",
+            )
+            self._assert_runtime_graph_fixture(fixture_root)
+
     def test_browser_boundaries_are_allowed_while_core_remains_pure(self):
         with tempfile.TemporaryDirectory() as temporary_directory:
             fixture_root = self._copy_source_fixture(temporary_directory)
             self._write_staged_fixture_module(
                 fixture_root,
                 Path("browser/local-track-loader.mjs"),
-                "export function accepts(file) { return file instanceof File; }",
+                "export function accepts(file) { return file instanceof File; }\n"
+                "export function digest(bytes) { return crypto.subtle.digest('SHA-256', bytes); }",
             )
             self._write_staged_fixture_module(
                 fixture_root,
@@ -449,6 +507,10 @@ export function assertLocalBuildIdentity() {{
             "const { performance } = globalThis; export const now = performance.now();",
             "const { 'performance': clock } = globalThis; export const now = clock.now();",
             "export const FileType = globalThis.File;",
+            "export const digest = (bytes) => crypto.subtle.digest('SHA-256', bytes);",
+            "export const cryptoProvider = globalThis.crypto;",
+            "const { crypto } = globalThis; export { crypto };",
+            "const { 'SubtleCrypto': Provider } = globalThis; export { Provider };",
         ]
         for body in pure_boundary_violations:
             with self.subTest(body=body), tempfile.TemporaryDirectory() as temporary_directory:
@@ -466,7 +528,7 @@ export function assertLocalBuildIdentity() {{
             self._write_staged_fixture_module(
                 fixture_root,
                 Path("core/tap-estimator.mjs"),
-                "export const labels = { fetch: 'label', performance: 'metric' };",
+                "export const labels = { fetch: 'label', performance: 'metric', crypto: 'provider' };",
             )
             self._assert_runtime_graph_fixture(fixture_root)
 
@@ -546,6 +608,7 @@ export function assertLocalBuildIdentity() {{
             self.assertFalse(analysis["hasDynamicImport"], relative_path)
             self.assertEqual(analysis["codeGenerationTokens"], [], relative_path)
             self.assertEqual(analysis["networkCapabilities"], [], relative_path)
+            self.assertEqual(analysis["persistenceCapabilities"], [], relative_path)
             if relative_path in PURE_RUNTIME_MODULES:
                 self.assertEqual(analysis["browserCapabilities"], [], relative_path)
             for import_path in analysis["staticSpecifiers"]:
