@@ -693,6 +693,24 @@ test('T3-NUMERIC-BOUNDARIES keeps phase exact, limits adoption to one sample, an
   assert.deepEqual(ordinaryPlan.adoptedSourceIdsByBeat[0], ['inclusive-sample']);
   assert.deepEqual(ordinaryPlan.cancelSourceIds, ['next-double-outside']);
 
+  const earlyLastTapAudioTime = 0;
+  const earlyBeat1 = earlyLastTapAudioTime + 60 / estimatedBpmExact;
+  const earlyBoundary = earlyBeat1 + 1 / largeClockInput.outputSampleRate;
+  const earlyPlan = createHandoffPlan({
+    ...validInput(),
+    estimatedBpmExact,
+    lastTapAudioTime: earlyLastTapAudioTime,
+    candidateBeat1AudioTime: earlyBeat1,
+    lockDeadlineAudioTime: earlyBeat1 - 0.3,
+    audioNow: earlyBeat1 - 0.2,
+    ownershipSnapshot: ownership([
+      { sourceId: 'early-inclusive-sample', scheduledAudioTime: earlyBoundary },
+      { sourceId: 'early-next-double-outside', scheduledAudioTime: nextUp(earlyBoundary) },
+    ]),
+  });
+  assert.deepEqual(earlyPlan.adoptedSourceIdsByBeat[0], ['early-inclusive-sample']);
+  assert.deepEqual(earlyPlan.cancelSourceIds, ['early-next-double-outside']);
+
   assert.throws(
     () => createHandoffPlan(validInput({ estimatedBpmExact: Number.MIN_VALUE })),
     /estimatedBpmExact must produce a finite positive beat duration/,

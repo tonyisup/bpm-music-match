@@ -136,9 +136,10 @@ function classifyOwnedSources(ownershipSnapshot, beatTimes, audioNow, oneSampleD
       bridgeSourceIds.push(sourceId);
     } else {
       const matchingBeatIndexes = beatTimes.flatMap((beatTime, index) => {
-        const fixedComparisonToleranceSeconds = Number.EPSILON * 4;
-        return Math.abs(scheduledAudioTime - beatTime)
-          <= oneSampleDurationSeconds + fixedComparisonToleranceSeconds ? [index] : [];
+        const earliestAlignedAudioTime = beatTime - oneSampleDurationSeconds;
+        const latestAlignedAudioTime = beatTime + oneSampleDurationSeconds;
+        return scheduledAudioTime >= earliestAlignedAudioTime
+          && scheduledAudioTime <= latestAlignedAudioTime ? [index] : [];
       });
       if (matchingBeatIndexes.length === 1) {
         disposition = 'adopt';
