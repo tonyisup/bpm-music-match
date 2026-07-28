@@ -61,6 +61,69 @@ function snapshotForIntervals(intervalsMs, firstTimestampMs = 0) {
   return snapshot;
 }
 
+test('T2-SNAPSHOT-PROVENANCE and T2-FLOATING-BOUNDARIES reject forged state first and preserve inclusive numeric contracts', () => {
+  const expectedSnapshotError = 'snapshot must be a genuine tap estimator snapshot';
+  const mutableLookalike = { timestampWindowMs: [] };
+  const untrustedCalls = [
+    () => admitTap({}, 0, 0),
+    () => admitTap(mutableLookalike, Number.NaN, 0),
+    () => admitTap(Object.freeze({ timestampWindowMs: Object.freeze([1_000, 0]) }), 1, 1),
+    () => admitTap(Object.freeze({ timestampWindowMs: Object.freeze([0, Number.NaN]) }), 1, 1),
+  ];
+  let untrustedResult;
+  for (const call of untrustedCalls) {
+    assert.throws(() => {
+      untrustedResult = call();
+    }, (error) => {
+      assert.strictEqual(error.constructor, TypeError);
+      assert.equal(error.message, expectedSnapshotError);
+      return true;
+    });
+    assert.equal(untrustedResult, undefined);
+  }
+  mutableLookalike.timestampWindowMs.push(123);
+  assert.deepEqual(mutableLookalike.timestampWindowMs, [123]);
+
+  const genuine = createTapEstimatorSnapshot();
+  for (const observedNowMs of [
+    Number.NaN,
+    Number.POSITIVE_INFINITY,
+    Number.NEGATIVE_INFINITY,
+  ]) {
+    reject(genuine, 0, observedNowMs, 'observed-now-not-finite');
+  }
+
+  const lowerRangeBoundary = snapshotForIntervals([250, 249.999]);
+  assert.deepEqual(lowerRangeBoundary.timestampWindowMs, [0, 250, 499.999]);
+  assert.equal(lowerRangeBoundary.rawIntervalsMs[0], 250);
+  assert.ok(lowerRangeBoundary.rawIntervalsMs[1] < 250);
+  assert.deepEqual(lowerRangeBoundary.rangeEligibleIntervalsMs, [250]);
+
+  const upperRangeBoundary = snapshotForIntervals([2_000, 2_000.001]);
+  assert.deepEqual(upperRangeBoundary.timestampWindowMs, [0, 2_000, 4_000.001]);
+  assert.equal(upperRangeBoundary.rawIntervalsMs[0], 2_000);
+  assert.ok(upperRangeBoundary.rawIntervalsMs[1] > 2_000);
+  assert.deepEqual(upperRangeBoundary.rangeEligibleIntervalsMs, [2_000]);
+
+  const inclusiveRetention = snapshotForIntervals([400, 500, 500, 500, 600]);
+  assert.equal(inclusiveRetention.seedMedianMs, 500);
+  assert.deepEqual(inclusiveRetention.validIntervalsMs, [400, 500, 500, 500, 600]);
+  assert.equal(inclusiveRetention.stableMedianMs, 500);
+
+  const outsideRetention = snapshotForIntervals([
+    400, 500, 500, 500, 600, 399.999, 600.001,
+  ]);
+  assert.equal(outsideRetention.seedMedianMs, 500);
+  assert.deepEqual(outsideRetention.validIntervalsMs, [400, 500, 500, 500, 600]);
+  assert.equal(outsideRetention.validIntervalsMs.includes(
+    outsideRetention.rawIntervalsMs.at(-2),
+  ), false);
+  assert.equal(outsideRetention.validIntervalsMs.includes(
+    outsideRetention.rawIntervalsMs.at(-1),
+  ), false);
+  assert.equal(outsideRetention.stableMedianMs, 500);
+});
+
 test('T2-TIMESTAMP-ADMISSION rejects invalid timing and retains eight accepted taps with adjacent range filtering', () => {
   const initial = createTapEstimatorSnapshot();
   assert.deepEqual(Object.keys(initial), SNAPSHOT_KEYS);

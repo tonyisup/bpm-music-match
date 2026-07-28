@@ -1,6 +1,8 @@
 import { assertBuildIdentity } from '../build-identity.mjs';
 
 const LOCAL_BUILD_SHA = '__BUILD_SHA__';
+const genuineSnapshots = new WeakSet();
+const INVALID_SNAPSHOT_MESSAGE = 'snapshot must be a genuine tap estimator snapshot';
 
 export function assertLocalBuildIdentity() {
   return assertBuildIdentity(LOCAL_BUILD_SHA);
@@ -72,7 +74,7 @@ function createSnapshot(timestampWindowMs) {
     ? null
     : latestTimestampMs + silenceTimeoutMs;
 
-  return deepFreeze({
+  const snapshot = deepFreeze({
     timestampWindowMs,
     rawIntervalsMs,
     rangeEligibleIntervalsMs,
@@ -88,6 +90,8 @@ function createSnapshot(timestampWindowMs) {
     silenceTimeoutMs,
     silenceDeadlineTimestampMs,
   });
+  genuineSnapshots.add(snapshot);
+  return snapshot;
 }
 
 export function createTapEstimatorSnapshot() {
@@ -103,6 +107,9 @@ function rejectTap(reason, snapshot) {
 }
 
 export function admitTap(snapshot, eventTimestampMs, observedNowMs) {
+  if (!genuineSnapshots.has(snapshot)) {
+    throw new TypeError(INVALID_SNAPSHOT_MESSAGE);
+  }
   if (!Number.isFinite(eventTimestampMs)) {
     return rejectTap('timestamp-not-finite', snapshot);
   }
