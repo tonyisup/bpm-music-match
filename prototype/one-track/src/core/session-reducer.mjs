@@ -71,6 +71,13 @@ const EVENT_SCHEMAS = Object.freeze({
     ...EFFECT_CALLBACK_KEYS,
     'cleanup',
   ]),
+  'generation-cleanup-faulted': Object.freeze([
+    'type',
+    'sessionId',
+    'generationId',
+    'sourceId',
+    'cause',
+  ]),
   'unload-track': Object.freeze(['type']),
   'try-again': Object.freeze(['type']),
   'unexpected-context-closed': Object.freeze(['type']),
@@ -394,6 +401,14 @@ function readEvent(candidate) {
       throw new TypeError('natural track end clock is invalid');
     }
   }
+  if (event.type === 'generation-cleanup-faulted'
+      && (!isBoundedIdentifier(event.sessionId)
+        || !Number.isSafeInteger(event.generationId)
+        || event.generationId <= 0
+        || !isBoundedIdentifier(event.sourceId)
+        || event.cause !== 'source-stop-failed')) {
+    throw new TypeError('generation cleanup fault ownership is invalid');
+  }
   if (event.type === 'application-teardown-settled'
       || event.type === 'generation-cleanup-settled'
       || event.type === 'smoke-probe-settled') {
@@ -678,7 +693,14 @@ function matchingPrediction(predictions, mappedTapAudioTime) {
 
 function beginApplicationTeardown(
   state,
-  { reason, loadToken, loadedSessionId, targetPhase, terminalCause = null },
+  {
+    reason,
+    loadToken,
+    loadedSessionId,
+    targetPhase,
+    terminalCause = null,
+    cleanup = { status: 'pending', cause: null },
+  },
 ) {
   const capturesTerminal = targetPhase === 'evidence-pending';
   const pairedWarmedAutoFailure = capturesTerminal && loadedSessionId !== null
@@ -724,7 +746,7 @@ function beginApplicationTeardown(
         downloaded: false,
       }
       : state.evidence,
-    cleanup: { status: 'pending', cause: null },
+    cleanup,
     resourceDisposition: 'teardown-pending',
     pendingEffects: [effect],
     teardown: {
@@ -740,7 +762,10 @@ function beginApplicationTeardown(
   }), effects);
 }
 
-function beginPostTerminalApplicationTeardown(state, { reason }) {
+function beginPostTerminalApplicationTeardown(
+  state,
+  { reason, cleanup = { status: 'pending', cause: null } },
+) {
   const teardownEffect = makeEffect(state, state.nextEffectId, 'application-teardown', {
     reason,
     loadToken: null,
@@ -754,7 +779,7 @@ function beginPostTerminalApplicationTeardown(state, { reason }) {
       cause: state.terminal.cause,
       diagnostics: [...state.terminal.diagnostics, { cause: reason }],
     },
-    cleanup: { status: 'pending', cause: null },
+    cleanup,
     resourceDisposition: 'teardown-pending',
     pendingEffects: [teardownEffect],
     teardown: {
@@ -1351,6 +1376,22 @@ export function reduceSession(state, rawEvent) {
   ].includes(state.phase) && state.activeGenerationId !== null;
   const callbackActivePhase = activeRuntimePhase || state.phase === 'smoke-probing';
 
+  if (event.type === 'generation-cleanup-faulted') {
+    const matches = activeRuntimePhase
+      && event.sessionId === state.sessionId
+      && event.generationId === state.activeGenerationId
+      && state.generationTermination === null
+      && state.terminal.cause === null;
+    return matches
+      ? beginGenerationTermination(state, {
+        reason: 'schedule-failed',
+        audioNow: state.lastAudioNow,
+        cancelDeadline: state.silenceDeadlineTimestampMs !== null,
+        targetPhase: 'evidence-pending',
+      })
+      : createResult(state);
+  }
+
   if (event.type === 'tap-timing-invalid') {
     return activeRuntimePhase
       ? beginGenerationTermination(state, {
@@ -1922,24 +1963,32 @@ export function reduceSession(state, rawEvent) {
     if (!matchesGenerationTermination(state, event)) {
       return createResult(state);
     }
-    if (event.cleanup.status === 'failed' && state.terminal.cause === null) {
+    if (event.cleanup.status === 'failed') {
       const cleanupFailureState = createState({
         ...state,
+        generationTermination: null,
         cleanup: event.cleanup,
         terminal: {
-          cause: null,
+          cause: state.terminal.cause,
           diagnostics: [
             ...state.terminal.diagnostics,
             { cause: event.cleanup.cause },
           ],
         },
       });
+      if (state.terminal.cause !== null) {
+        return beginPostTerminalApplicationTeardown(cleanupFailureState, {
+          reason: 'generation-cleanup-failed',
+          cleanup: event.cleanup,
+        });
+      }
       return beginApplicationTeardown(cleanupFailureState, {
         reason: 'generation-cleanup-failed',
         loadToken: null,
         loadedSessionId: state.loadedSessionId,
         targetPhase: 'evidence-pending',
         terminalCause: 'schedule-failed',
+        cleanup: event.cleanup,
       });
     }
     const targetPhase = state.generationTermination.targetPhase;
