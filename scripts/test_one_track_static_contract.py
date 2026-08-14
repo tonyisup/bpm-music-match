@@ -270,6 +270,36 @@ def analyze_runtime_modules(sources: dict[Path, str]) -> dict[Path, dict[str, An
     }
 
 class OneTrackStaticContractTests(unittest.TestCase):
+    def test_task10_accessible_browser_surface_contract(self):
+        html = (PRODUCT_ROOT / "index.html").read_text(encoding="utf-8")
+        styles = (PRODUCT_ROOT / "styles.css").read_text(encoding="utf-8")
+        main = (SOURCE_ROOT / "browser/main.mjs").read_text(encoding="utf-8")
+        renderer = (SOURCE_ROOT / "browser/renderer.mjs").read_text(encoding="utf-8")
+        expected_csp = (
+            "default-src 'none'; script-src 'self'; style-src 'self'; "
+            "connect-src 'none'; media-src 'none'; object-src 'none'; "
+            "worker-src 'none'; frame-src 'none'; form-action 'none'; base-uri 'none'"
+        )
+
+        self.assertEqual(html.count("<main"), 1)
+        self.assertEqual(html.count("<h1"), 1)
+        self.assertIn('name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"', html)
+        self.assertNotIn("user-scalable=no", html)
+        self.assertNotIn("maximum-scale", html)
+        self.assertIn(f'content="{expected_csp}"', html)
+        self.assertEqual(html.count('name="one-track-build" content="__BUILD_SHA__"'), 1)
+        self.assertIn('<input id="track-input" type="file"', html)
+        self.assertIn('<details id="diagnostics"', html)
+        self.assertIn("Did the song feel hidden inside the taps?", html)
+        for forbidden in ["<audio", "<video", "<canvas", "<progress", "beat counter", "countdown"]:
+            self.assertNotIn(forbidden, html.lower())
+        self.assertIn("min-height: clamp(8rem", styles)
+        self.assertIn("@media (prefers-reduced-motion: reduce)", styles)
+        self.assertIn("safe-area-inset-top", styles)
+        self.assertIn("input.value = '';", main)
+        self.assertLess(main.index("input.value = '';"), main.index("coordinator.selectFile(selectedTrack)"))
+        self.assertIn("createViewModel", renderer)
+
     def _copy_source_fixture(self, temporary_directory: str) -> Path:
         fixture_root = Path(temporary_directory) / "src"
         shutil.copytree(SOURCE_ROOT, fixture_root)

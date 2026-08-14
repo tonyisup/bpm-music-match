@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#151511">
+  <meta name="color-scheme" content="dark">
+  <meta name="one-track-build" content="__BUILD_SHA__">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'none'; media-src 'none'; object-src 'none'; worker-src 'none'; frame-src 'none'; form-action 'none'; base-uri 'none'">
+  <title>BPM Music Match</title>
+  <link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+  <main class="shell">
+    <header class="masthead">
+      <p class="eyebrow">BPM Music Match</p>
+      <p id="run-label" class="run-label">Loading run…</p>
+    </header>
+
+    <section class="session-card" aria-labelledby="state-title">
+      <div class="status-copy" role="status" aria-live="polite" aria-atomic="true">
+        <div id="busy-indicator" class="pulse" hidden aria-hidden="true"></div>
+        <h1 id="state-title">Preparing the session</h1>
+        <p id="state-detail">Checking the locked build.</p>
+      </div>
+
+      <div class="estimate" aria-label="Current tempo estimate">
+        <span class="estimate-label">Estimate</span>
+        <strong id="estimate">— BPM</strong>
+      </div>
+
+      <div class="primary-actions">
+        <button id="choose-track" class="button button-primary" type="button" hidden>Choose track</button>
+        <input id="track-input" type="file" accept=".mp3,audio/mpeg" hidden>
+        <button id="tap" class="tap-button" type="button" hidden>Tap</button>
+        <button id="try-again" class="button button-primary" type="button" hidden>Try again</button>
+        <button id="reset-session" class="button button-primary" type="button" hidden>Reset session</button>
+      </div>
+
+      <div class="secondary-actions">
+        <button id="cancel-loading" class="button button-quiet" type="button" hidden>Cancel</button>
+        <button id="end-trial" class="button button-quiet" type="button" hidden>End trial</button>
+        <button id="unload-track" class="button button-quiet" type="button" hidden>Unload track</button>
+      </div>
+
+      <form id="evidence-form" class="evidence" hidden>
+        <fieldset id="scored-assessment">
+          <legend>Did the song feel hidden inside the taps?</legend>
+          <label><input type="radio" name="verdict" value="intentional" required> Intentional</label>
+          <label><input type="radio" name="verdict" value="mechanical"> Mechanical</label>
+          <label><input type="radio" name="verdict" value="not-judged"> Not judged</label>
+          <div class="checks">
+            <label><input type="checkbox" name="missingBeat"> Missing beat</label>
+            <label><input type="checkbox" name="doubledBeat"> Doubled beat</label>
+            <label><input type="checkbox" name="click"> Click</label>
+            <label><input type="checkbox" name="gap"> Gap</label>
+            <label><input type="checkbox" name="audibleClipping"> Audible clipping</label>
+            <label><input type="checkbox" name="staleAudio"> Stale audio</label>
+            <label><input type="checkbox" name="ownershipLeak"> Ownership leak</label>
+            <label><input type="checkbox" name="teardownFailure"> Teardown failure</label>
+          </div>
+        </fieldset>
+        <fieldset id="smoke-assessment" hidden>
+          <legend>Cancellation smoke check</legend>
+          <label><input type="checkbox" name="oldGenerationStoppedCleanly" checked> Old sound stopped cleanly</label>
+          <label><input type="checkbox" name="noDelayedTail" checked> No delayed tail</label>
+          <label><input type="checkbox" name="noDoubledAcknowledgment" checked> No doubled tap</label>
+          <label><input type="checkbox" name="noStaleRestart" checked> No stale restart</label>
+          <label><input type="checkbox" name="nextTapAcknowledged" checked> Next tap acknowledged</label>
+        </fieldset>
+        <button class="button button-primary" type="submit">Save evidence</button>
+      </form>
+
+      <details id="diagnostics" class="diagnostics" hidden>
+        <summary>Diagnostics</summary>
+        <p>Only sanitized run, timing, cleanup, and build facts are eligible for evidence.</p>
+      </details>
+    </section>
+
+    <p class="privacy-note">Your approved local track stays in browser memory on this device. No upload, storage, or automatic track analysis is used. Evidence contains only fixed identities, timing outcomes, and your review.</p>
+  </main>
+  <script type="module" src="./src/browser/main.mjs"></script>
+</body>
+</html>
