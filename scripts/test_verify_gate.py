@@ -3,6 +3,7 @@ from __future__ import annotations
 import importlib.util
 import re
 import shlex
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -20,6 +21,9 @@ EXPECTED_STAGE_IDS = [
     "enrollment-static-contract",
     "enrollment-module-import",
     "enrollment-node-tests",
+    "one-track-static-contract",
+    "one-track-module-import",
+    "one-track-node-tests",
     "enrollment-browser-privacy",
     "pages-staging",
 ]
@@ -117,7 +121,14 @@ class VerifyGateContractTests(unittest.TestCase):
             return True, ""
 
         setattr(verifier, "run_command", record)
-        for stage in verifier.STAGES[5:]:
+        enrollment_stage_ids = {
+            "enrollment-static-contract",
+            "enrollment-module-import",
+            "enrollment-node-tests",
+            "enrollment-browser-privacy",
+            "pages-staging",
+        }
+        for stage in [item for item in verifier.STAGES if item.stage_id in enrollment_stage_ids]:
             passed, output = verifier.execute_stage(stage)
             self.assertTrue(passed, stage.stage_id)
             self.assertEqual(output, "")
@@ -147,7 +158,7 @@ class VerifyGateContractTests(unittest.TestCase):
         self.assertEqual(recorded[3], ["node", "scripts/enrollment_browser_privacy_smoke.mjs"])
         self.assertEqual(
             recorded[4][3:],
-            ["-v", "scripts/test_stage_pages.py"],
+            ["-v", "scripts/test_stage_pages.py", "scripts/test_stage_one_track_local.py"],
         )
 
         import_stage = next(
@@ -181,6 +192,36 @@ class VerifyGateContractTests(unittest.TestCase):
         for invocation in ["which google-chrome", "command -v chromium", "spawn('which', ['chrome'])"]:
             self.assertIsNotNone(command_discovery.search(invocation), invocation)
         self.assertNotRegex(source, command_discovery)
+
+    def test_one_track_node_stage_fails_when_product_tests_are_not_discovered(self):
+        verifier = load_verifier()
+        stage = next(
+            item for item in verifier.STAGES if item.stage_id == "one-track-node-tests"
+        )
+        original_root = verifier.ONE_TRACK_ROOT
+        with tempfile.TemporaryDirectory() as directory:
+            verifier.ONE_TRACK_ROOT = Path(directory)
+            try:
+                passed, output = verifier.execute_stage(stage)
+            finally:
+                verifier.ONE_TRACK_ROOT = original_root
+        self.assertFalse(passed)
+        self.assertEqual(output, "no one-track Node test files found")
+
+    def test_pages_staging_stage_exercises_both_publication_paths(self):
+        verifier = load_verifier()
+        recorded = []
+        setattr(verifier, "run_command", lambda command: (recorded.append(command) or (True, "")))
+        stage = next(item for item in verifier.STAGES if item.stage_id == "pages-staging")
+        self.assertEqual(verifier.execute_stage(stage), (True, ""))
+        self.assertEqual(recorded, [[
+            verifier.sys.executable,
+            "-m",
+            "unittest",
+            "-v",
+            "scripts/test_stage_pages.py",
+            "scripts/test_stage_one_track_local.py",
+        ]])
 
 
 if __name__ == "__main__":

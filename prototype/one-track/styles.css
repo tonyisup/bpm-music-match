@@ -1,0 +1,168 @@
+:root {
+  color: #f4f2e9;
+  background: #151511;
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-synthesis: none;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  min-width: 320px;
+  min-height: 100vh;
+  min-height: 100svh;
+  margin: 0;
+  background:
+    radial-gradient(circle at 75% 5%, rgb(213 255 82 / 9%), transparent 26rem),
+    #151511;
+}
+
+button, input { font: inherit; }
+
+button:focus-visible, input:focus-visible {
+  outline: 3px solid #d5ff52;
+  outline-offset: 4px;
+}
+
+[hidden] { display: none !important; }
+
+.shell {
+  width: min(100%, 34rem);
+  min-height: 100svh;
+  margin: 0 auto;
+  padding: max(1.5rem, env(safe-area-inset-top)) 1.25rem max(1.5rem, env(safe-area-inset-bottom));
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  gap: 1.25rem;
+}
+
+.masthead {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 1rem;
+}
+
+.eyebrow, .run-label, .estimate-label {
+  margin: 0;
+  color: #aaa99f;
+  font-size: .76rem;
+  font-weight: 750;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+}
+
+.run-label { color: #d5ff52; text-align: right; }
+
+.session-card {
+  align-self: center;
+  padding: clamp(1.35rem, 5vw, 2rem);
+  border: 1px solid #3c3d33;
+  border-radius: 1.75rem;
+  background: #20211c;
+  box-shadow: 0 1.5rem 5rem rgb(0 0 0 / 28%);
+}
+
+.status-copy { min-height: 9rem; }
+
+h1 {
+  max-width: 13ch;
+  margin: .65rem 0 .75rem;
+  font-size: clamp(2rem, 8vw, 3.35rem);
+  line-height: .98;
+  letter-spacing: -.045em;
+}
+
+#state-detail {
+  max-width: 34ch;
+  min-height: 3rem;
+  margin: 0;
+  color: #b9b8ae;
+  line-height: 1.5;
+}
+
+.pulse {
+  width: .6rem;
+  height: .6rem;
+  border-radius: 50%;
+  background: #d5ff52;
+  box-shadow: 0 0 0 .35rem rgb(213 255 82 / 12%);
+  animation: breathe 1.2s ease-in-out infinite alternate;
+}
+
+.estimate {
+  margin: 1.5rem 0;
+  padding: 1rem 1.15rem;
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1rem;
+  border-radius: 1rem;
+  background: #171813;
+}
+
+.estimate strong { font-size: 1.45rem; font-variant-numeric: tabular-nums; }
+
+.primary-actions, .secondary-actions { display: grid; gap: .75rem; }
+.secondary-actions { margin-top: .75rem; grid-template-columns: repeat(auto-fit, minmax(8rem, 1fr)); }
+
+.button, .tap-button {
+  width: 100%;
+  min-height: 3.5rem;
+  border: 0;
+  border-radius: 999px;
+  cursor: pointer;
+  font-weight: 800;
+}
+
+.button-primary { color: #151511; background: #d5ff52; }
+.button-quiet { color: #f4f2e9; background: #35362e; }
+.button:active, .tap-button:active { transform: translateY(1px); }
+
+.tap-button {
+  min-height: clamp(8rem, 32vw, 11rem);
+  border: 1px solid #e1ff86;
+  color: #151511;
+  background: #d5ff52;
+  font-size: 2.6rem;
+  letter-spacing: -.04em;
+  box-shadow: inset 0 -1rem 2rem rgb(99 125 15 / 14%);
+  touch-action: manipulation;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.evidence { margin-top: 1.25rem; }
+.evidence fieldset { margin: 0 0 1rem; padding: 0; border: 0; }
+.evidence legend { margin-bottom: 1rem; font-size: 1.1rem; font-weight: 800; }
+.evidence label { min-height: 2.75rem; display: flex; align-items: center; gap: .65rem; }
+.evidence input { width: 1.2rem; height: 1.2rem; accent-color: #d5ff52; }
+.checks { margin: .65rem 0 0 1.85rem; display: grid; grid-template-columns: 1fr 1fr; color: #c6c5bb; font-size: .9rem; }
+
+.privacy-note {
+  margin: 0;
+  color: #898a80;
+  font-size: .78rem;
+  line-height: 1.5;
+  text-align: center;
+}
+
+.diagnostics {
+  margin-top: 1rem;
+  color: #aaa99f;
+  font-size: .85rem;
+  line-height: 1.5;
+}
+
+.diagnostics summary { min-height: 3rem; display: flex; align-items: center; cursor: pointer; }
+
+@keyframes breathe { to { opacity: .45; transform: scale(.78); } }
+
+@media (max-width: 390px) {
+  .checks { grid-template-columns: 1fr; }
+  .session-card { border-radius: 1.35rem; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { scroll-behavior: auto !important; animation: none !important; transition: none !important; }
+}

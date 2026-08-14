@@ -396,13 +396,15 @@ Recovery actions are singular:
 
 ## Pre-Implementation Inputs
 
-Implementation must not begin until Tony supplies or approves:
+All five inputs below were completed on 2026-07-27 through the accepted Pixel two-cycle enrollment report. The exact sanitized identity and experiment constants are fixed by `docs/design/2026-07-24-milestone-2-one-track-vertical-slice.md`; that milestone-specific design supersedes the historical hypotheses in this document where their numeric values differ.
 
-1. Primary acceptance phone, OS, and browser.
-2. One redistributable audio asset or one local audio file for non-persistent use.
-3. Verified BPM.
-4. The first clean 4/4 `targetEntryDownbeatSeconds`.
-5. Preferred percussion character for the first test.
+Completed inputs:
+
+1. Pixel 8 Pro, Android 16 build `CP1A.260505.005`, Chrome `150.0.7871.181`.
+2. The private local-file identity `m2-island-party-v1`; bytes remain user-selected, browser-local, unpersisted, and undistributed.
+3. Verified BPM `110`.
+4. Curated 4/4 target-entry downbeat `17.579` seconds.
+5. Percussion recipe `kick-snare-v1`.
 
 ## Success Criteria
 

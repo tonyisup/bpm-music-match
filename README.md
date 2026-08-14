@@ -1,10 +1,12 @@
 # BPM Music Match
 
-A narrow personal workout-music experiment. Milestone 1 is a disposable Android Chrome gate that answers one technical question: can one raw Web Audio graph start from a direct gesture, schedule phase-locked percussion, overlap into one controlled track, and release every source reliably?
+A narrow personal workout-music experiment. Milestone 1 is a frozen disposable Android Chrome gate that proved one raw Web Audio graph can start from a direct gesture, schedule phase-locked percussion, overlap into one controlled track, and release every source reliably. Milestone 2 is now the active one-track tap-to-handoff experiment.
 
-This milestone is **not** product validation. It has no tap tempo, provider integration, catalog, account, playlist, or matcher. The separate `/enroll/` utility is a private-fixture bootstrap exception, not Milestone 2 product architecture. Follow the [private enrollment runbook](tools/m2-enrollment/README.md); never upload or send the MP3.
+The Milestone 2 fixture gate completed on the accepted Pixel with the sanitized `m2-island-party-v1` identity. The separate `/enroll/` utility remains a private-fixture bootstrap exception, not product architecture. The private MP3 is never committed, uploaded, or redistributed. Milestone 2 still excludes provider integration, catalog, accounts, playlists, persistence, automatic BPM/downbeat analysis, and generalized matching.
 
 ## Prerequisites
+
+### Local
 
 Use these exact runtimes:
 
@@ -12,28 +14,32 @@ Use these exact runtimes:
 - Node v22.22.3
 - GitHub CLI authenticated to `tonyisup/bpm-music-match`
 
-Check the live environment:
+Select the exact runtimes before using the verifier. On the current macOS development setup:
 
 ```bash
-python3 --version
+/usr/local/bin/python3.13 --version
 node --version
 gh auth status
 ```
 
-The verifier fails immediately if either runtime differs.
+The verifier fails immediately if either runtime differs. Do not use an unpinned `python3` when it resolves to another minor version.
+
+### CI
+
+GitHub Actions pins Python 3.13.7 and Node v22.22.3 with `actions/setup-python` and `actions/setup-node`. CI therefore uses `python3` and `node` without assuming a local `/usr/local/bin` layout.
 
 ## Quick Start
 
-From the repository root:
+From the repository root, verify and stage the Milestone 2 browser surface with one immutable local build identity:
 
 ```bash
-python3 scripts/verify_gate.py
-python3 -m http.server 8000 --bind 127.0.0.1 --directory spikes/001-mobile-web-audio-gate
+/usr/local/bin/python3.13 scripts/verify_gate.py
+SITE_PARENT=$(mktemp -d)
+/usr/local/bin/python3.13 scripts/stage_one_track_local.py "$(git rev-parse HEAD)" "$SITE_PARENT/site"
+/usr/local/bin/python3.13 -m http.server 8000 --bind 127.0.0.1 --directory "$SITE_PARENT/site"
 ```
 
-Open <http://127.0.0.1:8000/>. The page should move from **Loading test audio…** to **Ready**. Press **Run** once. A terminal result requires a page reload before another attempt.
-
-For the measured developer-experience check, start a timer when this README is opened in a fresh clone or reopen. Stop it when the local page first shows **Ready**. Record the URL and README-to-Ready duration in the [validation worksheet](spikes/001-mobile-web-audio-gate/validation/gate-1.md).
+Open one exact run URL, such as <http://127.0.0.1:8000/?run=session-1>. The other accepted values are `session-2` through `session-5`, `smoke-crossfade`, and `smoke-playing`. Missing or malformed run values fail closed before track selection.
 
 Expected verifier shape:
 
@@ -46,9 +52,12 @@ PASS node-tests <duration>
 PASS enrollment-static-contract <duration>
 PASS enrollment-module-import <duration>
 PASS enrollment-node-tests <duration>
+PASS one-track-static-contract <duration>
+PASS one-track-module-import <duration>
+PASS one-track-node-tests <duration>
 PASS enrollment-browser-privacy <duration>
 PASS pages-staging <duration>
-PASS gate 10/10 <total-duration>
+PASS gate 13/13 <total-duration>
 ```
 
 The verifier is the sole local and CI gate. Individual commands below are debugging aids, not alternate verification workflows.
@@ -90,7 +99,7 @@ gh run watch "$RUN_ID" --exit-status
 
 The public Gate 1 URL is <https://tonyisup.github.io/bpm-music-match/>. It remains frozen to accepted Gate 1 commit `11df30f6f6cf90940bee425847614abaf26cc6f1`, even when a later deployment commit publishes it. Before every Gate 1 Android trial, expand **Diagnostics** at **Ready** and confirm that accepted identity.
 
-The public enrollment bootstrap URL is <https://tonyisup.github.io/bpm-music-match/enroll/>. The candidate MP3 remains private and local; the URL itself is publicly reachable. Its HTML and every executed enrollment module identify the deploying main-branch commit and reject mixed cached builds. Do not use it until the exact reviewed deployment succeeds, and follow the [Private enrollment runbook](tools/m2-enrollment/README.md).
+The public enrollment bootstrap URL is <https://tonyisup.github.io/bpm-music-match/enroll/>. The candidate MP3 remains private and local; the URL itself is publicly reachable. Its HTML and every executed enrollment module identify the deploying main-branch commit and reject mixed cached builds. Enrollment is complete for `m2-island-party-v1`; rerun it only if the fixture or experiment identity changes, and always follow the [Private enrollment runbook](tools/m2-enrollment/README.md).
 
 ## Troubleshooting
 
@@ -162,9 +171,17 @@ Run the named failing test in isolation before changing implementation.
 
 - `enrollment-node-tests`: rerun `node --test scripts/enrollment-download-artifacts.test.mjs tools/m2-enrollment/tests/*.test.mjs`.
 - `enrollment-browser-privacy`: rerun `node scripts/enrollment_browser_privacy_smoke.mjs` with a supported installed Chrome.
-- `pages-staging`: rerun `python3 -m unittest -v scripts/test_stage_pages.py` and fix the named manifest, allowlist, identity, or publication assertion.
+- `pages-staging`: rerun `python3 -m unittest -v scripts/test_stage_pages.py scripts/test_stage_one_track_local.py` and fix the named manifest, allowlist, identity, or publication assertion.
 
 These are unified-gate debugging commands. The release decision still comes only from `python3 scripts/verify_gate.py`.
+
+### One-track stages
+
+- `one-track-static-contract`: rerun `python3 -m unittest -v scripts/test_one_track_static_contract.py`.
+- `one-track-module-import`: rerun the exact command emitted on the `RERUN:` line and fix the named production import.
+- `one-track-node-tests`: rerun `node --test prototype/one-track/tests/*.test.mjs scripts/validate_one_track_evidence.test.mjs`.
+
+The one-track tests enforce local-only track handling, exact browser/reducer clocks, deterministic audio ownership, accessible state rendering, sanitized evidence, and the fixed production module graph.
 
 ### Browser error codes
 
@@ -188,5 +205,6 @@ Browser details are intentionally not shown in the user-visible error copy. Use 
 - [Spike contract and calibration runbook](spikes/001-mobile-web-audio-gate/README.md)
 - [Android validation worksheet](spikes/001-mobile-web-audio-gate/validation/gate-1.md)
 - [Milestone 2 one-track design](docs/design/2026-07-24-milestone-2-one-track-vertical-slice.md)
+- [Milestone 2 one-track implementation plan](docs/plans/2026-07-27-milestone-2-one-track-vertical-slice.md)
 - [Milestone 2 enrollment bootstrap plan](docs/plans/2026-07-25-milestone-2-enrollment-bootstrap.md)
 - [Private enrollment runbook](tools/m2-enrollment/README.md)

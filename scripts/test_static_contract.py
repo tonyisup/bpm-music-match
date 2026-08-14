@@ -266,19 +266,21 @@ class StaticGateContractTests(unittest.TestCase):
         worksheet = (SPIKE_ROOT / "validation" / "gate-1.md").read_text()
 
         for required in [
-            "Python 3.13.7", "Node v22.22.3", "python3 scripts/verify_gate.py",
-            "python3 -m http.server 8000 --bind 127.0.0.1 --directory spikes/001-mobile-web-audio-gate",
-            "http://127.0.0.1:8000/", "gh auth status", "build_type=workflow",
+            "Python 3.13.7", "Node v22.22.3", "/usr/local/bin/python3.13 scripts/verify_gate.py",
+            "scripts/stage_one_track_local.py", "http://127.0.0.1:8000/?run=session-1",
+            "gh auth status", "build_type=workflow",
             "gh run watch", "PASS runtime-version", "PASS asset-integrity",
             "PASS static-contract", "PASS module-import", "PASS node-tests",
             "PASS enrollment-static-contract", "PASS enrollment-module-import",
-            "PASS enrollment-node-tests", "PASS enrollment-browser-privacy",
-            "PASS pages-staging", "PASS gate 10/10",
+            "PASS enrollment-node-tests", "PASS one-track-static-contract",
+            "PASS one-track-module-import", "PASS one-track-node-tests",
+            "PASS enrollment-browser-privacy", "PASS pages-staging", "PASS gate 13/13",
         ]:
             self.assertIn(required, root_readme)
         for stage_id in [
             "runtime-version", "asset-integrity", "static-contract", "module-import", "node-tests",
             "enrollment-static-contract", "enrollment-module-import", "enrollment-node-tests",
+            "one-track-static-contract", "one-track-module-import", "one-track-node-tests",
             "enrollment-browser-privacy", "pages-staging",
         ]:
             self.assertIn(stage_id, root_readme)

@@ -26,6 +26,7 @@ import {
   CHROME_TEMPORARY_TREE_REMOVE_OPTIONS,
   ENROLLMENT_REPORT_FILENAME,
   validateDownloadArtifactNames,
+  waitForSettledDownloadArtifacts,
 } from './enrollment-download-artifacts.mjs';
 
 const CHROME_CANDIDATES = Object.freeze([
@@ -1256,7 +1257,9 @@ async function main() {
       downloadDirectory,
     );
 
-    const downloadFiles = await readdir(downloadDirectory);
+    const downloadFiles = await waitForSettledDownloadArtifacts(
+      () => readdir(downloadDirectory),
+    );
     const auxiliaryDownloadFiles = validateDownloadArtifactNames(downloadFiles);
     assertNoPrivateMaterial('download artifact names', downloadFiles);
     for (const auxiliaryFilename of auxiliaryDownloadFiles) {
