@@ -8,7 +8,7 @@ async function flush(turns = 8) {
   for (let index = 0; index < turns; index += 1) await Promise.resolve();
 }
 
-function createFixture() {
+function createFixture(overrides = {}) {
   const calls = [];
   const states = [];
   const timers = [];
@@ -28,6 +28,7 @@ function createFixture() {
     },
     cancel() { calls.push({ type: 'cancel' }); return true; },
     teardown(reason) { calls.push({ type: 'teardown', reason }); return Promise.resolve(); },
+    ...overrides.loader,
   });
   const engine = Object.freeze({
     directTap(request) {
@@ -52,12 +53,18 @@ function createFixture() {
       calls.push({ type: 'terminate-generation', request });
       return Object.freeze({ cleanupPromise: new Promise(() => {}) });
     },
+    ...overrides.engine,
   });
   let now = 1_000;
   const coordinator = createSessionCoordinator({
     runContext: parseRunQuery('?run=session-1'),
     loader,
-    createEngine(options) { calls.push({ type: 'create-engine', options }); return engine; },
+    createEngine(options) {
+      calls.push({ type: 'create-engine', options });
+      return overrides.createEngine === undefined
+        ? engine
+        : overrides.createEngine(options);
+    },
     openTrackPicker() { calls.push({ type: 'open-picker' }); },
     setTimer(callback, milliseconds) {
       const timer = { callback, milliseconds, cleared: false };
@@ -115,4 +122,70 @@ test('T9-COORDINATOR converts a late idle timer into an owned reducer event', as
   fixture.setNow(3_000);
   fixture.timers[0].callback();
   assert.equal(fixture.coordinator.inspect().phase, 'generation-settling');
+});
+
+test('T9-COORDINATOR turns a synchronous audio command failure into finalizable evidence', async () => {
+  const fixture = createFixture({
+    loader: {
+      teardown(reason) {
+        fixture.calls.push({ type: 'teardown', reason });
+        return Promise.reject(new Error('synthetic close rejection'));
+      },
+    },
+    engine: {
+      directTap() { throw new Error('synthetic direct tap failure'); },
+    },
+  });
+  fixture.coordinator.chooseTrack();
+  fixture.coordinator.selectFile({});
+  await flush();
+
+  fixture.coordinator.tap(1_000);
+  await flush(16);
+
+  assert.equal(fixture.coordinator.inspect().phase, 'evidence-pending');
+  assert.deepEqual(fixture.coordinator.inspect().cleanup, {
+    status: 'failed',
+    cause: 'context-close-failed',
+  });
+  assert.equal(fixture.coordinator.inspect().loadedSessionId, null);
+  assert.equal(fixture.calls.filter(({ type }) => type === 'teardown').length, 1);
+
+  const assessment = {
+    recordKind: 'scored',
+    verdict: 'not-judged',
+    missingBeat: false,
+    doubledBeat: false,
+    click: false,
+    gap: false,
+    audibleClipping: false,
+    staleAudio: false,
+    ownershipLeak: false,
+    teardownFailure: true,
+  };
+  const first = fixture.coordinator.finalizeEvidence(assessment);
+  const retry = fixture.coordinator.finalizeEvidence(assessment);
+  assert.equal(retry, first);
+  assert.match(first.download.href, /^data:application\/json;charset=utf-8,/);
+});
+
+test('T9-COORDINATOR contains synchronous loader and engine construction failures', async () => {
+  const loadFailure = createFixture({
+    loader: {
+      load() { throw new Error('synthetic load failure'); },
+    },
+  });
+  loadFailure.coordinator.chooseTrack();
+  loadFailure.coordinator.selectFile({});
+  await flush();
+  assert.equal(loadFailure.coordinator.inspect().phase, 'error');
+
+  const engineFailure = createFixture({
+    createEngine() { throw new Error('synthetic engine construction failure'); },
+  });
+  engineFailure.coordinator.chooseTrack();
+  engineFailure.coordinator.selectFile({});
+  await flush(16);
+  assert.equal(engineFailure.coordinator.inspect().phase, 'error');
+  assert.equal(engineFailure.calls.filter(({ type }) => type === 'teardown').length, 1);
 });

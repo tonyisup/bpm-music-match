@@ -76,6 +76,29 @@ export function readAssessment(form, recordKind) {
   };
 }
 
+export function bindTapActivation(button, onTap) {
+  button.addEventListener('pointerdown', (event) => {
+    event.preventDefault();
+    onTap(event.timeStamp);
+  });
+  button.addEventListener('click', (event) => {
+    if (event.detail === 0) onTap(event.timeStamp);
+  });
+}
+
+export function activateEvidenceDownload(root, pending) {
+  const link = root.createElement('a');
+  link.download = pending.download.filename;
+  link.href = pending.download.href;
+  link.hidden = true;
+  root.body.append(link);
+  try {
+    link.click();
+  } finally {
+    link.remove();
+  }
+}
+
 function assertBuildGraph(root) {
   const modules = [
     configModule,
@@ -140,9 +163,8 @@ export function main(root = document, search = location.search) {
     coordinator.selectFile(selectedTrack);
   });
   root.getElementById('cancel-loading').addEventListener('click', () => coordinator.cancelLoading());
-  root.getElementById('tap').addEventListener('pointerdown', (event) => {
-    event.preventDefault();
-    coordinator.tap(event.timeStamp);
+  bindTapActivation(root.getElementById('tap'), (eventTimestampMs) => {
+    coordinator.tap(eventTimestampMs);
   });
   root.getElementById('try-again').addEventListener('click', () => coordinator.tryAgain());
   root.getElementById('end-trial').addEventListener('click', () => coordinator.endTrial());
@@ -153,11 +175,7 @@ export function main(root = document, search = location.search) {
     if (!form.reportValidity()) return;
     const recordKind = coordinator.inspect().runContext.recordKind;
     const pending = coordinator.finalizeEvidence(readAssessment(form, recordKind));
-    const link = root.createElement('a');
-    link.download = pending.download.filename;
-    link.href = pending.download.href;
-    link.click();
-    link.remove();
+    activateEvidenceDownload(root, pending);
     coordinator.confirmEvidenceDownloaded(pending);
   });
 

@@ -15,7 +15,7 @@ The source build placeholders intentionally fail closed. Stage the reviewed 20-f
 ```sh
 SITE_PARENT=$(mktemp -d)
 /usr/local/bin/python3.13 scripts/stage_one_track_local.py "$(git rev-parse HEAD)" "$SITE_PARENT/site"
-python3 -m http.server 8000 --bind 127.0.0.1 --directory "$SITE_PARENT/site"
+/usr/local/bin/python3.13 -m http.server 8000 --bind 127.0.0.1 --directory "$SITE_PARENT/site"
 ```
 
 Open exactly one of the fixed run URLs:

@@ -171,7 +171,7 @@ Run the named failing test in isolation before changing implementation.
 
 - `enrollment-node-tests`: rerun `node --test scripts/enrollment-download-artifacts.test.mjs tools/m2-enrollment/tests/*.test.mjs`.
 - `enrollment-browser-privacy`: rerun `node scripts/enrollment_browser_privacy_smoke.mjs` with a supported installed Chrome.
-- `pages-staging`: rerun `python3 -m unittest -v scripts/test_stage_pages.py` and fix the named manifest, allowlist, identity, or publication assertion.
+- `pages-staging`: rerun `python3 -m unittest -v scripts/test_stage_pages.py scripts/test_stage_one_track_local.py` and fix the named manifest, allowlist, identity, or publication assertion.
 
 These are unified-gate debugging commands. The release decision still comes only from `python3 scripts/verify_gate.py`.
 

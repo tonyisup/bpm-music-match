@@ -84,7 +84,7 @@ STAGES = (
     Stage("one-track-module-import", shlex.join(ONE_TRACK_IMPORT_COMMAND), "README.md#one-track-stages"),
     Stage("one-track-node-tests", "node --test prototype/one-track/tests/*.test.mjs scripts/validate_one_track_evidence.test.mjs", "README.md#one-track-stages"),
     Stage("enrollment-browser-privacy", "node scripts/enrollment_browser_privacy_smoke.mjs", "README.md#enrollment-and-pages-stages"),
-    Stage("pages-staging", "python3 -m unittest -v scripts/test_stage_pages.py", "README.md#enrollment-and-pages-stages"),
+    Stage("pages-staging", "python3 -m unittest -v scripts/test_stage_pages.py scripts/test_stage_one_track_local.py", "README.md#enrollment-and-pages-stages"),
 )
 
 
@@ -182,11 +182,13 @@ def execute_stage(stage: Stage) -> tuple[bool, str]:
         return run_command(list(ONE_TRACK_IMPORT_COMMAND))
 
     if stage.stage_id == "one-track-node-tests":
-        tests = sorted(
+        product_tests = sorted(
             str(path.relative_to(REPO_ROOT))
             for path in (ONE_TRACK_ROOT / "tests").glob("*.test.mjs")
         )
-        tests.append("scripts/validate_one_track_evidence.test.mjs")
+        if not product_tests:
+            return False, "no one-track Node test files found"
+        tests = [*product_tests, "scripts/validate_one_track_evidence.test.mjs"]
         return run_command(["node", "--test", *tests])
 
     if stage.stage_id == "enrollment-browser-privacy":
@@ -194,7 +196,8 @@ def execute_stage(stage: Stage) -> tuple[bool, str]:
 
     if stage.stage_id == "pages-staging":
         return run_command([
-            sys.executable, "-m", "unittest", "-v", "scripts/test_stage_pages.py",
+            sys.executable, "-m", "unittest", "-v",
+            "scripts/test_stage_pages.py", "scripts/test_stage_one_track_local.py",
         ])
 
     return False, f"unknown stage {stage.stage_id}"

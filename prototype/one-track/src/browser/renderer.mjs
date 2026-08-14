@@ -97,7 +97,9 @@ export function createRenderer(root) {
       elements.unload.hidden = !view.unloadVisible;
       elements.evidence.hidden = !view.evidenceVisible;
       elements.scored.hidden = !view.scoredEvidenceVisible;
+      elements.scored.disabled = !view.scoredEvidenceVisible;
       elements.smoke.hidden = !view.smokeEvidenceVisible;
+      elements.smoke.disabled = !view.smokeEvidenceVisible;
       elements.reset.hidden = !view.resetVisible;
       elements.busy.hidden = !view.busy;
       elements.diagnostics.hidden = !view.diagnosticsVisible;

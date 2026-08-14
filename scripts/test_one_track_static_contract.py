@@ -589,7 +589,7 @@ export function assertLocalBuildIdentity() {{
         readme = readme_path.read_text(encoding="utf-8")
         for required in [
             "independent product boundary",
-            "python3 -m http.server",
+            "/usr/local/bin/python3.13 -m http.server",
             "private file",
             "source-to-root staging",
             "human merge gate",
