@@ -415,6 +415,11 @@ function validateTerminalDraft(candidate) {
   return candidate;
 }
 
+export function assertTerminalDraft(candidate) {
+  validateTerminalDraft(candidate);
+  return true;
+}
+
 function validatePayload(effectType, candidate, effectGenerationId) {
   const keys = PAYLOAD_KEYS[effectType];
   const values = readExactOrdinaryDataRecord(candidate, keys, `${effectType} payload`);
