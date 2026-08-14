@@ -36,6 +36,10 @@ ENROLLMENT_IMPORT_EXPRESSION = "await Promise.all([" + ",".join(
 ENROLLMENT_IMPORT_COMMAND = (
     "node", "--input-type=module", "--eval", ENROLLMENT_IMPORT_EXPRESSION,
 )
+ENROLLMENT_SUPPORT_TESTS = (
+    "scripts/chrome-devtools-startup.test.mjs",
+    "scripts/enrollment-download-artifacts.test.mjs",
+)
 ONE_TRACK_SOURCE_MODULES = (
     "audio/audio-math.mjs",
     "audio/percussion-buffer.mjs",
@@ -79,7 +83,7 @@ STAGES = (
     Stage("node-tests", "node --test spikes/001-mobile-web-audio-gate/tests/*.test.mjs", "README.md#node-tests"),
     Stage("enrollment-static-contract", "python3 -m unittest -v scripts/test_enrollment_static_contract.py", "README.md#enrollment-and-pages-stages"),
     Stage("enrollment-module-import", shlex.join(ENROLLMENT_IMPORT_COMMAND), "README.md#enrollment-and-pages-stages"),
-    Stage("enrollment-node-tests", "node --test scripts/enrollment-download-artifacts.test.mjs tools/m2-enrollment/tests/*.test.mjs", "README.md#enrollment-and-pages-stages"),
+    Stage("enrollment-node-tests", f"node --test {' '.join(ENROLLMENT_SUPPORT_TESTS)} tools/m2-enrollment/tests/*.test.mjs", "README.md#enrollment-and-pages-stages"),
     Stage("one-track-static-contract", "python3 -m unittest -v scripts/test_one_track_static_contract.py", "README.md#one-track-stages"),
     Stage("one-track-module-import", shlex.join(ONE_TRACK_IMPORT_COMMAND), "README.md#one-track-stages"),
     Stage("one-track-node-tests", "node --test prototype/one-track/tests/*.test.mjs scripts/validate_one_track_evidence.test.mjs", "README.md#one-track-stages"),
@@ -164,12 +168,13 @@ def execute_stage(stage: Stage) -> tuple[bool, str]:
         return run_command(list(ENROLLMENT_IMPORT_COMMAND))
 
     if stage.stage_id == "enrollment-node-tests":
-        tests = ["scripts/enrollment-download-artifacts.test.mjs", *sorted(
+        enrollment_tests = sorted(
             str(path.relative_to(REPO_ROOT))
             for path in (ENROLLMENT_ROOT / "tests").glob("*.test.mjs")
-        )]
-        if len(tests) == 1:
+        )
+        if not enrollment_tests:
             return False, "no enrollment Node test files found"
+        tests = [*ENROLLMENT_SUPPORT_TESTS, *enrollment_tests]
         return run_command(["node", "--test", *tests])
 
     if stage.stage_id == "one-track-static-contract":

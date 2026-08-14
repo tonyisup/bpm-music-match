@@ -28,6 +28,7 @@ import {
   validateDownloadArtifactNames,
   waitForSettledDownloadArtifacts,
 } from './enrollment-download-artifacts.mjs';
+import { waitForChromeDevToolsEndpoint } from './chrome-devtools-startup.mjs';
 
 const CHROME_CANDIDATES = Object.freeze([
   '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
@@ -39,7 +40,7 @@ const CHROME_CANDIDATES = Object.freeze([
 const EXPECTED_FIXTURE_SHA256 = '9f63dad57226cb5e4a8bd615f0d86e09ab474c9a235cd9230b0f97fe40d26db9';
 const COMMAND_TIMEOUT_MS = 5_000;
 const PAGE_TIMEOUT_MS = 20_000;
-const CHROME_START_TIMEOUT_MS = 12_000;
+const CHROME_START_TIMEOUT_MS = 30_000;
 const NETWORK_QUIET_MS = 150;
 const MAX_CHROME_AUXILIARY_DOWNLOAD_BYTES = 1_000_000;
 const PRIVATE_BYTE_SENTINEL = 'PRIVATE_BYTE_SENTINEL_DO_NOT_EXPOSE';
@@ -274,20 +275,25 @@ async function launchChrome(profileDirectory, chromePath) {
     stdio: ['ignore', 'ignore', 'pipe'],
   });
   let stderr = '';
+  let spawnError = null;
+  child.once('error', (error) => { spawnError = error; });
+  child.stderr.on('data', (chunk) => {
+    stderr += chunk.toString('utf8');
+    if (stderr.length > 32_768) stderr = stderr.slice(-32_768);
+  });
   try {
-    const endpoint = await bounded(new Promise((resolve, reject) => {
-      const inspect = (chunk) => {
-        stderr += chunk.toString('utf8');
-        if (stderr.length > 32_768) stderr = stderr.slice(-32_768);
-        const match = stderr.match(/DevTools listening on (ws:\/\/[^\s]+)/);
-        if (match !== null) resolve(match[1]);
-      };
-      child.stderr.on('data', inspect);
-      child.once('error', reject);
-      child.once('exit', (code, signal) => {
-        reject(new Error(`Chrome exited before DevTools startup (code ${code ?? 'none'}, signal ${signal ?? 'none'})`));
-      });
-    }), 'Chrome DevTools startup', CHROME_START_TIMEOUT_MS);
+    const endpoint = await waitForChromeDevToolsEndpoint({
+      readActivePort: () => readFile(path.join(profileDirectory, 'DevToolsActivePort'), 'utf8'),
+      readStderr: () => stderr,
+      readProcessState: () => ({
+        spawnError,
+        exitCode: child.exitCode,
+        signalCode: child.signalCode,
+      }),
+      wait: delay,
+      now: () => performance.now(),
+      timeoutMilliseconds: CHROME_START_TIMEOUT_MS,
+    });
     return { child, endpoint, stderr: () => stderr };
   } catch (error) {
     await terminateChild(child);
