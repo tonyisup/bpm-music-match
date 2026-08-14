@@ -20,6 +20,9 @@ EXPECTED_STAGE_IDS = [
     "enrollment-static-contract",
     "enrollment-module-import",
     "enrollment-node-tests",
+    "one-track-static-contract",
+    "one-track-module-import",
+    "one-track-node-tests",
     "enrollment-browser-privacy",
     "pages-staging",
 ]
@@ -117,7 +120,14 @@ class VerifyGateContractTests(unittest.TestCase):
             return True, ""
 
         setattr(verifier, "run_command", record)
-        for stage in verifier.STAGES[5:]:
+        enrollment_stage_ids = {
+            "enrollment-static-contract",
+            "enrollment-module-import",
+            "enrollment-node-tests",
+            "enrollment-browser-privacy",
+            "pages-staging",
+        }
+        for stage in [item for item in verifier.STAGES if item.stage_id in enrollment_stage_ids]:
             passed, output = verifier.execute_stage(stage)
             self.assertTrue(passed, stage.stage_id)
             self.assertEqual(output, "")

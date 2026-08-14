@@ -4,17 +4,18 @@ This directory is an **independent product boundary** for the Milestone 2 one-tr
 
 ## Local start
 
-Task 1 has no browser entry point yet. Run its contracts from the repository root:
+Run the complete product contracts from the repository root:
 
 ```sh
-node --test prototype/one-track/tests/*.test.mjs
-python3 -m unittest -v scripts/test_one_track_static_contract.py
+/usr/local/bin/python3.13 scripts/verify_gate.py
 ```
 
-Once the browser entry point is added by a later task, serve this product locally without adding a server dependency:
+The source build placeholders intentionally fail closed. Stage the reviewed 20-file browser surface with the current commit identity, then serve it without adding a server dependency:
 
 ```sh
-python3 -m http.server 8000 --directory prototype/one-track
+SITE_PARENT=$(mktemp -d)
+/usr/local/bin/python3.13 scripts/stage_one_track_local.py "$(git rev-parse HEAD)" "$SITE_PARENT/site"
+python3 -m http.server 8000 --bind 127.0.0.1 --directory "$SITE_PARENT/site"
 ```
 
 Open exactly one of the fixed run URLs:

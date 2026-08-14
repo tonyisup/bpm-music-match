@@ -6,34 +6,40 @@ The Milestone 2 fixture gate completed on the accepted Pixel with the sanitized 
 
 ## Prerequisites
 
+### Local
+
 Use these exact runtimes:
 
 - Python 3.13.7
 - Node v22.22.3
 - GitHub CLI authenticated to `tonyisup/bpm-music-match`
 
-Check the live environment:
+Select the exact runtimes before using the verifier. On the current macOS development setup:
 
 ```bash
-python3 --version
+/usr/local/bin/python3.13 --version
 node --version
 gh auth status
 ```
 
-The verifier fails immediately if either runtime differs.
+The verifier fails immediately if either runtime differs. Do not use an unpinned `python3` when it resolves to another minor version.
+
+### CI
+
+GitHub Actions pins Python 3.13.7 and Node v22.22.3 with `actions/setup-python` and `actions/setup-node`. CI therefore uses `python3` and `node` without assuming a local `/usr/local/bin` layout.
 
 ## Quick Start
 
-From the repository root:
+From the repository root, verify and stage the Milestone 2 browser surface with one immutable local build identity:
 
 ```bash
-python3 scripts/verify_gate.py
-python3 -m http.server 8000 --bind 127.0.0.1 --directory spikes/001-mobile-web-audio-gate
+/usr/local/bin/python3.13 scripts/verify_gate.py
+SITE_PARENT=$(mktemp -d)
+/usr/local/bin/python3.13 scripts/stage_one_track_local.py "$(git rev-parse HEAD)" "$SITE_PARENT/site"
+/usr/local/bin/python3.13 -m http.server 8000 --bind 127.0.0.1 --directory "$SITE_PARENT/site"
 ```
 
-Open <http://127.0.0.1:8000/>. The page should move from **Loading test audio…** to **Ready**. Press **Run** once. A terminal result requires a page reload before another attempt.
-
-For the measured developer-experience check, start a timer when this README is opened in a fresh clone or reopen. Stop it when the local page first shows **Ready**. Record the URL and README-to-Ready duration in the [validation worksheet](spikes/001-mobile-web-audio-gate/validation/gate-1.md).
+Open one exact run URL, such as <http://127.0.0.1:8000/?run=session-1>. The other accepted values are `session-2` through `session-5`, `smoke-crossfade`, and `smoke-playing`. Missing or malformed run values fail closed before track selection.
 
 Expected verifier shape:
 
@@ -46,9 +52,12 @@ PASS node-tests <duration>
 PASS enrollment-static-contract <duration>
 PASS enrollment-module-import <duration>
 PASS enrollment-node-tests <duration>
+PASS one-track-static-contract <duration>
+PASS one-track-module-import <duration>
+PASS one-track-node-tests <duration>
 PASS enrollment-browser-privacy <duration>
 PASS pages-staging <duration>
-PASS gate 10/10 <total-duration>
+PASS gate 13/13 <total-duration>
 ```
 
 The verifier is the sole local and CI gate. Individual commands below are debugging aids, not alternate verification workflows.
@@ -165,6 +174,14 @@ Run the named failing test in isolation before changing implementation.
 - `pages-staging`: rerun `python3 -m unittest -v scripts/test_stage_pages.py` and fix the named manifest, allowlist, identity, or publication assertion.
 
 These are unified-gate debugging commands. The release decision still comes only from `python3 scripts/verify_gate.py`.
+
+### One-track stages
+
+- `one-track-static-contract`: rerun `python3 -m unittest -v scripts/test_one_track_static_contract.py`.
+- `one-track-module-import`: rerun the exact command emitted on the `RERUN:` line and fix the named production import.
+- `one-track-node-tests`: rerun `node --test prototype/one-track/tests/*.test.mjs scripts/validate_one_track_evidence.test.mjs`.
+
+The one-track tests enforce local-only track handling, exact browser/reducer clocks, deterministic audio ownership, accessible state rendering, sanitized evidence, and the fixed production module graph.
 
 ### Browser error codes
 

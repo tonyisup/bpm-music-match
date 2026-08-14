@@ -11,6 +11,7 @@ from typing import NamedTuple
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SPIKE_ROOT = REPO_ROOT / "spikes" / "001-mobile-web-audio-gate"
 ENROLLMENT_ROOT = REPO_ROOT / "tools" / "m2-enrollment"
+ONE_TRACK_ROOT = REPO_ROOT / "prototype" / "one-track"
 EXPECTED_PYTHON = "3.13.7"
 EXPECTED_NODE = "v22.22.3"
 
@@ -35,6 +36,33 @@ ENROLLMENT_IMPORT_EXPRESSION = "await Promise.all([" + ",".join(
 ENROLLMENT_IMPORT_COMMAND = (
     "node", "--input-type=module", "--eval", ENROLLMENT_IMPORT_EXPRESSION,
 )
+ONE_TRACK_SOURCE_MODULES = (
+    "audio/audio-math.mjs",
+    "audio/percussion-buffer.mjs",
+    "audio/web-audio-engine.mjs",
+    "browser/clock-adapter.mjs",
+    "browser/coordinator.mjs",
+    "browser/loaded-session.mjs",
+    "browser/local-track-loader.mjs",
+    "browser/main.mjs",
+    "browser/renderer.mjs",
+    "build-identity.mjs",
+    "config.mjs",
+    "core/effects.mjs",
+    "core/evidence-schema.mjs",
+    "core/handoff-planner.mjs",
+    "core/run-context.mjs",
+    "core/session-reducer.mjs",
+    "core/tap-estimator.mjs",
+    "track-metadata.mjs",
+)
+ONE_TRACK_IMPORT_EXPRESSION = "await Promise.all([" + ",".join(
+    f'import("./prototype/one-track/src/{module_name}")'
+    for module_name in ONE_TRACK_SOURCE_MODULES
+) + "]);"
+ONE_TRACK_IMPORT_COMMAND = (
+    "node", "--input-type=module", "--eval", ONE_TRACK_IMPORT_EXPRESSION,
+)
 
 
 class Stage(NamedTuple):
@@ -52,6 +80,9 @@ STAGES = (
     Stage("enrollment-static-contract", "python3 -m unittest -v scripts/test_enrollment_static_contract.py", "README.md#enrollment-and-pages-stages"),
     Stage("enrollment-module-import", shlex.join(ENROLLMENT_IMPORT_COMMAND), "README.md#enrollment-and-pages-stages"),
     Stage("enrollment-node-tests", "node --test scripts/enrollment-download-artifacts.test.mjs tools/m2-enrollment/tests/*.test.mjs", "README.md#enrollment-and-pages-stages"),
+    Stage("one-track-static-contract", "python3 -m unittest -v scripts/test_one_track_static_contract.py", "README.md#one-track-stages"),
+    Stage("one-track-module-import", shlex.join(ONE_TRACK_IMPORT_COMMAND), "README.md#one-track-stages"),
+    Stage("one-track-node-tests", "node --test prototype/one-track/tests/*.test.mjs scripts/validate_one_track_evidence.test.mjs", "README.md#one-track-stages"),
     Stage("enrollment-browser-privacy", "node scripts/enrollment_browser_privacy_smoke.mjs", "README.md#enrollment-and-pages-stages"),
     Stage("pages-staging", "python3 -m unittest -v scripts/test_stage_pages.py", "README.md#enrollment-and-pages-stages"),
 )
@@ -139,6 +170,23 @@ def execute_stage(stage: Stage) -> tuple[bool, str]:
         )]
         if len(tests) == 1:
             return False, "no enrollment Node test files found"
+        return run_command(["node", "--test", *tests])
+
+    if stage.stage_id == "one-track-static-contract":
+        return run_command([
+            sys.executable, "-m", "unittest", "-v",
+            "scripts/test_one_track_static_contract.py",
+        ])
+
+    if stage.stage_id == "one-track-module-import":
+        return run_command(list(ONE_TRACK_IMPORT_COMMAND))
+
+    if stage.stage_id == "one-track-node-tests":
+        tests = sorted(
+            str(path.relative_to(REPO_ROOT))
+            for path in (ONE_TRACK_ROOT / "tests").glob("*.test.mjs")
+        )
+        tests.append("scripts/validate_one_track_evidence.test.mjs")
         return run_command(["node", "--test", *tests])
 
     if stage.stage_id == "enrollment-browser-privacy":
