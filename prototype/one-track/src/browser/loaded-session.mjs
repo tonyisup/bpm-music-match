@@ -473,6 +473,31 @@ function resetAfterEvidence() {
   return suspend.call(this, 'reset-after-evidence');
 }
 
+function snapshotAudioClock() {
+  const state = stateForReceiver(this);
+  if (state.unloaded) fail('loaded-session-unloaded');
+  const context = state.context;
+  let contextState;
+  let audioNow;
+  let outputSampleRate;
+  try {
+    contextState = context.state;
+    audioNow = context.currentTime;
+    outputSampleRate = context.sampleRate;
+  } catch {
+    fail('audio-clock-invalid');
+  }
+  if (!['running', 'suspended'].includes(contextState)
+      || !Number.isFinite(audioNow)
+      || audioNow < 0
+      || !Number.isFinite(outputSampleRate)
+      || outputSampleRate <= 0
+      || !Number.isFinite(1 / outputSampleRate)) {
+    fail('audio-clock-invalid');
+  }
+  return Object.freeze({ audioNow, contextState, outputSampleRate });
+}
+
 function unload(reason) {
   return beginUnload(stateForReceiver(this), reason);
 }
@@ -497,6 +522,7 @@ export function acceptValidatedLoadReceipt(receipt) {
     borrowForGeneration,
     suspend,
     resetAfterEvidence,
+    snapshotAudioClock,
     unload,
   });
   const state = {

@@ -102,6 +102,8 @@ export function createFakeTrackLoaderDeps(options = {}) {
       suspendOperations.push(suspendOperation);
       const context = {
         state: options.contextState ?? 'suspended',
+        currentTime: options.currentTime ?? 1.25,
+        sampleRate: options.outputSampleRate ?? 48_000,
         onstatechange: null,
         decodeAudioData(bytes) {
           events.push(Object.freeze({ type: 'decode', sameBytes: bytes === rawBytes }));

@@ -1050,7 +1050,7 @@ test('T8-STALE-TRACK-IDENTITY cannot clear or report a same-ID replacement track
 
   assert.equal(staleTrack.fireCapturedEndedCallback(), true);
   assertSourceReferencesClearedOnce(staleTrack);
-  assert.equal(fixture.engine.inspect().track?.sourceId, `handoff-${GENERATION_ID}-track`);
+  assert.equal(fixture.engine.inspect().track?.sourceId, `generation-${GENERATION_ID}-track-source`);
   assert.equal(emittedEvents.length, eventsBeforeStaleCallback);
 
   const receipt = fixture.receipts.mint();
@@ -8811,7 +8811,7 @@ test('T8-AUTONOMOUS-CLEANUP-FAULT-FACT', async () => {
       const plan = createPlan();
       const settlement = await fixture.engine.commitHandoff(handoffRequest(plan));
       assert.deepEqual(settlement, { status: 'succeeded', cause: null });
-      sourceId = `handoff-${GENERATION_ID}-track`;
+      sourceId = `generation-${GENERATION_ID}-track-source`;
       faultSource = fixture.audio.context.sources.at(-1);
       assert.equal(fixture.engine.inspect().track?.sourceId, sourceId);
       assert.equal(faultSource.startRecord.offset, plan.trackStartOffsetSeconds);

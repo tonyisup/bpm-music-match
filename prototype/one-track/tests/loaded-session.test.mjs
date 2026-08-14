@@ -41,6 +41,7 @@ test('T7-CAPABILITY is opaque, closed, genuine-only, and cannot be publicly mint
     'borrowForGeneration',
     'suspend',
     'resetAfterEvidence',
+    'snapshotAudioClock',
     'unload',
   ]);
   assert.equal(Object.isFrozen(capability), true);
@@ -67,6 +68,22 @@ test('T7-CAPABILITY is opaque, closed, genuine-only, and cannot be publicly mint
     })),
     /validated load receipt/,
   );
+});
+
+test('T7-CLOCK exposes only a frozen, sanitized audio clock snapshot', async () => {
+  const loaded = await loadSession({ currentTime: 7.5, outputSampleRate: 44_100 });
+  assert.deepEqual(loaded.capability.snapshotAudioClock(), {
+    audioNow: 7.5,
+    contextState: 'suspended',
+    outputSampleRate: 44_100,
+  });
+  assert.equal(Object.isFrozen(loaded.capability.snapshotAudioClock()), true);
+  assert.throws(
+    () => loaded.capability.snapshotAudioClock.call({ ...loaded.capability }),
+    /receiver/,
+  );
+  await loaded.capability.unload('test-finished');
+  assert.throws(() => loaded.capability.snapshotAudioClock(), /unloaded/);
 });
 
 test('T7-GENERATION-LIFETIME exposes resume settlement while one borrow remains owned until callback lifetime release', async () => {

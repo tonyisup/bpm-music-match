@@ -1217,7 +1217,7 @@ export function createWebAudioEngine(options) {
 
   function createTrackSource(transaction, context, request, plan) {
     const graph = createGraph(transaction, context);
-    const sourceId = `handoff-${request.generationId}-track`;
+    const sourceId = `generation-${request.generationId}-track-source`;
     if (transaction.sources.has(sourceId)) throw new TypeError('track source already exists');
     const source = context.createBufferSource();
     const endedSignal = createSignal();

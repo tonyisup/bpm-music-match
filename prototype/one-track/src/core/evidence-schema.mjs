@@ -186,7 +186,9 @@ export function createEvidenceRecorder({ sessionId }) {
   let active = null;
 
   function captureTerminalDraft(candidate) {
-    if (active !== null) throw new TypeError('terminal evidence is already captured');
+    if (active !== null && active.evidence === null) {
+      throw new TypeError('terminal evidence is already captured');
+    }
     const terminalDraft = copyTerminalDraft(candidate);
     if (terminalDraft.sessionId !== sessionId) {
       throw new TypeError('terminal evidence session ownership is invalid');
@@ -203,6 +205,25 @@ export function createEvidenceRecorder({ sessionId }) {
     RECEIPT_OWNERS.set(receipt, Object.freeze({
       recorder,
       terminalRecordReceiptId,
+    }));
+    return receipt;
+  }
+
+  function authorizeGenerationCleanup(candidate) {
+    const request = readExactRecord(
+      candidate,
+      ['sessionId', 'generationId'],
+      'generation cleanup authority',
+    );
+    if (request.sessionId !== sessionId
+        || !Number.isSafeInteger(request.generationId)
+        || request.generationId <= 0) {
+      throw new TypeError('generation cleanup authority is invalid');
+    }
+    const receipt = Object.freeze({});
+    RECEIPT_OWNERS.set(receipt, Object.freeze({
+      recorder,
+      terminalRecordReceiptId: `cleanup-${sessionId}-generation-${request.generationId}`,
     }));
     return receipt;
   }
@@ -249,6 +270,7 @@ export function createEvidenceRecorder({ sessionId }) {
 
   return Object.freeze({
     captureTerminalDraft,
+    authorizeGenerationCleanup,
     assertTerminalRecordReceipt,
     terminalRecordReceiptId,
     writeCleanup,
