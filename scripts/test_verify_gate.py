@@ -41,6 +41,10 @@ EXPECTED_ENROLLMENT_MODULES = [
     "enrollment-measurements.mjs",
     "enrollment-report.mjs",
 ]
+EXPECTED_ENROLLMENT_SUPPORT_TESTS = [
+    "scripts/chrome-devtools-startup.test.mjs",
+    "scripts/enrollment-download-artifacts.test.mjs",
+]
 
 
 def load_verifier():
@@ -142,10 +146,11 @@ class VerifyGateContractTests(unittest.TestCase):
         for module_name in EXPECTED_ENROLLMENT_MODULES:
             self.assertIn(f"./tools/m2-enrollment/{module_name}", enrollment_import[3])
         self.assertEqual(recorded[2][:2], ["node", "--test"])
-        self.assertIn("scripts/enrollment-download-artifacts.test.mjs", recorded[2][2:])
+        for support_test in EXPECTED_ENROLLMENT_SUPPORT_TESTS:
+            self.assertIn(support_test, recorded[2][2:])
         self.assertTrue(
             all(
-                path == "scripts/enrollment-download-artifacts.test.mjs"
+                path in EXPECTED_ENROLLMENT_SUPPORT_TESTS
                 or path.startswith("tools/m2-enrollment/tests/")
                 for path in recorded[2][2:]
             )
@@ -153,7 +158,8 @@ class VerifyGateContractTests(unittest.TestCase):
         enrollment_node_stage = next(
             stage for stage in verifier.STAGES if stage.stage_id == "enrollment-node-tests"
         )
-        self.assertIn("scripts/enrollment-download-artifacts.test.mjs", enrollment_node_stage.rerun)
+        for support_test in EXPECTED_ENROLLMENT_SUPPORT_TESTS:
+            self.assertIn(support_test, enrollment_node_stage.rerun)
         self.assertIn(enrollment_node_stage.rerun, ROOT_README.read_text(encoding="utf-8"))
         self.assertEqual(recorded[3], ["node", "scripts/enrollment_browser_privacy_smoke.mjs"])
         self.assertEqual(
