@@ -19,19 +19,50 @@ MANIFEST_PATH = Path(__file__).resolve().with_name("gate1-public-manifest.json")
 ACCEPTED_GATE1_COMMIT = "11df30f6f6cf90940bee425847614abaf26cc6f1"
 ROOT_PLACEHOLDER = b"__BUILD_COMMIT__"
 ENROLLMENT_PLACEHOLDER = b"__ENROLLMENT_BUILD_COMMIT__"
+ONE_TRACK_PLACEHOLDER = b"__BUILD_SHA__"
 SHA_PATTERN = re.compile(r"^[0-9a-f]{40}$")
 SHA256_PATTERN = re.compile(r"^[0-9a-f]{64}$")
-ROOT_FILES = (
-    ("spikes/001-mobile-web-audio-gate/index.html", "index.html"),
-    ("spikes/001-mobile-web-audio-gate/styles.css", "styles.css"),
-    ("spikes/001-mobile-web-audio-gate/app.mjs", "app.mjs"),
-    ("spikes/001-mobile-web-audio-gate/audio-engine.mjs", "audio-engine.mjs"),
-    ("spikes/001-mobile-web-audio-gate/audio-math.mjs", "audio-math.mjs"),
-    ("spikes/001-mobile-web-audio-gate/asset-metadata.json", "asset-metadata.json"),
-    ("spikes/001-mobile-web-audio-gate/calibration.json", "calibration.json"),
-    ("spikes/001-mobile-web-audio-gate/assets/gate-track.wav", "assets/gate-track.wav"),
+GATE1_SOURCE_ROOT = "spikes/001-mobile-web-audio-gate"
+ONE_TRACK_SOURCE_PREFIX = "prototype/one-track"
+ONE_TRACK_FILES = (
+    ("index.html", "index.html"),
+    ("styles.css", "styles.css"),
+    ("src/track-metadata.mjs", "src/track-metadata.mjs"),
+    ("src/build-identity.mjs", "src/build-identity.mjs"),
+    ("src/config.mjs", "src/config.mjs"),
+    ("src/core/run-context.mjs", "src/core/run-context.mjs"),
+    ("src/core/tap-estimator.mjs", "src/core/tap-estimator.mjs"),
+    ("src/core/handoff-planner.mjs", "src/core/handoff-planner.mjs"),
+    ("src/core/effects.mjs", "src/core/effects.mjs"),
+    ("src/core/session-reducer.mjs", "src/core/session-reducer.mjs"),
+    ("src/core/evidence-schema.mjs", "src/core/evidence-schema.mjs"),
+    ("src/audio/audio-math.mjs", "src/audio/audio-math.mjs"),
+    ("src/audio/percussion-buffer.mjs", "src/audio/percussion-buffer.mjs"),
+    ("src/audio/web-audio-engine.mjs", "src/audio/web-audio-engine.mjs"),
+    ("src/browser/local-track-loader.mjs", "src/browser/local-track-loader.mjs"),
+    ("src/browser/loaded-session.mjs", "src/browser/loaded-session.mjs"),
+    ("src/browser/clock-adapter.mjs", "src/browser/clock-adapter.mjs"),
+    ("src/browser/coordinator.mjs", "src/browser/coordinator.mjs"),
+    ("src/browser/renderer.mjs", "src/browser/renderer.mjs"),
+    ("src/browser/main.mjs", "src/browser/main.mjs"),
 )
-ROOT_RENDER_DESTINATIONS = frozenset({"index.html", "app.mjs", "audio-engine.mjs", "audio-math.mjs"})
+ONE_TRACK_RENDER_DESTINATIONS = frozenset(
+    destination for source, destination in ONE_TRACK_FILES if source.endswith((".html", ".mjs"))
+)
+ROOT_FILES = (
+    (f"{GATE1_SOURCE_ROOT}/index.html", "gate1/index.html"),
+    (f"{GATE1_SOURCE_ROOT}/styles.css", "gate1/styles.css"),
+    (f"{GATE1_SOURCE_ROOT}/app.mjs", "gate1/app.mjs"),
+    (f"{GATE1_SOURCE_ROOT}/audio-engine.mjs", "gate1/audio-engine.mjs"),
+    (f"{GATE1_SOURCE_ROOT}/audio-math.mjs", "gate1/audio-math.mjs"),
+    (f"{GATE1_SOURCE_ROOT}/asset-metadata.json", "gate1/asset-metadata.json"),
+    (f"{GATE1_SOURCE_ROOT}/calibration.json", "gate1/calibration.json"),
+    (f"{GATE1_SOURCE_ROOT}/assets/gate-track.wav", "gate1/assets/gate-track.wav"),
+)
+ROOT_MANIFEST_DESTINATIONS = frozenset(destination for _, destination in ROOT_FILES)
+ROOT_RENDER_DESTINATIONS = frozenset(
+    destination for source, destination in ROOT_FILES if source.endswith((".html", ".mjs"))
+)
 ENROLLMENT_FILES = (
     "index.html",
     "styles.css",
@@ -142,7 +173,7 @@ def _write_bytes(root: Path, relative_path: str, content: bytes) -> None:
     destination.write_bytes(content)
 
 
-def _stage_root(temp_root: Path, repo_root: Path, manifest: list[dict[str, str]]) -> None:
+def _stage_gate1(temp_root: Path, repo_root: Path, manifest: list[dict[str, str]]) -> None:
     accepted = ACCEPTED_GATE1_COMMIT.encode("ascii")
     for entry in manifest:
         content = _read_fixed_source(repo_root, entry["source"])
@@ -155,6 +186,21 @@ def _stage_root(temp_root: Path, repo_root: Path, manifest: list[dict[str, str]]
         if hashlib.sha256(rendered).hexdigest() != entry["sha256"]:
             raise StageError("Gate 1 artifact integrity validation failed")
         _write_bytes(temp_root, entry["destination"], rendered)
+
+
+def _stage_one_track(temp_root: Path, repo_root: Path, deploy_commit: str) -> None:
+    deploy_bytes = deploy_commit.encode("ascii")
+    for source, destination in ONE_TRACK_FILES:
+        content = _read_fixed_source(repo_root, f"{ONE_TRACK_SOURCE_PREFIX}/{source}")
+        expected_count = 0 if destination == "styles.css" else 1
+        if content.count(ONE_TRACK_PLACEHOLDER) != expected_count:
+            raise StageError("one-track build identity validation failed")
+        rendered = content.replace(ONE_TRACK_PLACEHOLDER, deploy_bytes)
+        if ONE_TRACK_PLACEHOLDER in rendered:
+            raise StageError("one-track build identity validation failed")
+        if destination in ONE_TRACK_RENDER_DESTINATIONS and rendered.count(deploy_bytes) != expected_count:
+            raise StageError("one-track module identity validation failed")
+        _write_bytes(temp_root, destination, rendered)
 
 
 def _stage_enrollment(temp_root: Path, repo_root: Path, deploy_commit: str) -> None:
@@ -181,12 +227,18 @@ def _validate_staged_tree(temp_root: Path, deploy_commit: str) -> None:
         if path.is_file()
     }
     expected = {destination for _, destination in ROOT_FILES} | {
+        destination for _, destination in ONE_TRACK_FILES
+    } | {
         f"enroll/{filename}" for filename in ENROLLMENT_FILES
     }
     if actual != expected:
         raise StageError("staged allowlist validation failed")
     enrollment_root = temp_root / "enroll"
     if any(path.suffix.lower() in PRIVATE_AUDIO_EXTENSIONS for path in enrollment_root.rglob("*")):
+        raise StageError("private media staging validation failed")
+    gate1_root = temp_root / "gate1"
+    if any(path.suffix.lower() in PRIVATE_AUDIO_EXTENSIONS for path in temp_root.rglob("*")
+           if not path.is_relative_to(gate1_root)):
         raise StageError("private media staging validation failed")
     deploy_bytes = deploy_commit.encode("ascii")
     for filename in ENROLLMENT_FILES:
@@ -253,7 +305,8 @@ def stage_pages(
 
     published = False
     try:
-        _stage_root(temporary, repository, manifest)
+        _stage_gate1(temporary, repository, manifest)
+        _stage_one_track(temporary, repository, deploy_commit)
         _stage_enrollment(temporary, repository, deploy_commit)
         _validate_staged_tree(temporary, deploy_commit)
         _rename_exclusive(temporary, output)
@@ -277,7 +330,7 @@ def main(argv: list[str] | None = None) -> int:
     except StageError as error:
         print(f"FAIL Pages staging: {error}", file=sys.stderr)
         return 1
-    print("PASS staged Pages artifact")
+    print(f"PASS staged Pages artifact build={arguments[0]} root=one-track enroll=preserved files={len(ONE_TRACK_FILES) + len(ROOT_FILES) + len(ENROLLMENT_FILES)} audio=0")
     return 0
 
 
