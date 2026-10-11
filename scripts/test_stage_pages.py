@@ -21,6 +21,36 @@ OTHER_COMMIT = "89abcdef0123456789abcdef0123456789abcdef"
 ROOT_FILES = {
     "index.html",
     "styles.css",
+    "src/track-metadata.mjs",
+    "src/build-identity.mjs",
+    "src/config.mjs",
+    "src/core/run-context.mjs",
+    "src/core/tap-estimator.mjs",
+    "src/core/handoff-planner.mjs",
+    "src/core/effects.mjs",
+    "src/core/session-reducer.mjs",
+    "src/core/evidence-schema.mjs",
+    "src/audio/audio-math.mjs",
+    "src/audio/percussion-buffer.mjs",
+    "src/audio/web-audio-engine.mjs",
+    "src/browser/local-track-loader.mjs",
+    "src/browser/loaded-session.mjs",
+    "src/browser/clock-adapter.mjs",
+    "src/browser/coordinator.mjs",
+    "src/browser/renderer.mjs",
+    "src/browser/main.mjs",
+}
+FORBIDDEN_ROOT_NAMES = {
+    "enrollment-core.mjs",
+    "README.md",
+    "synthetic-enrollment.mp3",
+    "app.test.mjs",
+    "replay-session.mjs",
+    "offline-handoff-renderer.mjs",
+}
+GATE1_SOURCE_FILES = {
+    "index.html",
+    "styles.css",
     "app.mjs",
     "audio-engine.mjs",
     "audio-math.mjs",
@@ -97,14 +127,14 @@ class StagePagesTests(unittest.TestCase):
         self.assertEqual(set(manifest), {"schemaVersion", "acceptedCommit", "files"})
         self.assertEqual(manifest["schemaVersion"], 1)
         self.assertEqual(manifest["acceptedCommit"], ACCEPTED_GATE1_COMMIT)
-        self.assertEqual(len(manifest["files"]), len(ROOT_FILES))
+        self.assertEqual(len(manifest["files"]), len(GATE1_SOURCE_FILES))
         self.assertEqual(
             {entry["destination"] for entry in manifest["files"]},
-            ROOT_FILES,
+            {f"gate1/{path}" for path in GATE1_SOURCE_FILES},
         )
         self.assertEqual(
             {entry["source"] for entry in manifest["files"]},
-            {f"spikes/001-mobile-web-audio-gate/{path}" for path in ROOT_FILES},
+            {f"spikes/001-mobile-web-audio-gate/{path}" for path in GATE1_SOURCE_FILES},
         )
         for entry in manifest["files"]:
             self.assertEqual(set(entry), {"source", "destination", "sha256"})
@@ -122,27 +152,70 @@ class StagePagesTests(unittest.TestCase):
             ).stdout
             self.assertEqual(current, accepted, entry["source"])
 
-    def test_stage_contains_only_fixed_root_and_transitive_enrollment_graph(self):
+    def test_stage_contains_only_one_track_root_and_transitive_enrollment_graph(self):
         output = self.stage()
         self.assertEqual(
             relative_files(output),
-            ROOT_FILES | {f"enroll/{path}" for path in ENROLLMENT_FILES},
+            ROOT_FILES
+            | {f"gate1/{path}" for path in GATE1_SOURCE_FILES}
+            | {f"enroll/{path}" for path in ENROLLMENT_FILES},
         )
-        forbidden_names = {
-            "enrollment-core.mjs", "README.md", "synthetic-enrollment.mp3", "app.test.mjs",
-        }
-        self.assertTrue(forbidden_names.isdisjoint({path.name for path in output.rglob("*")}))
+        self.assertTrue(
+            FORBIDDEN_ROOT_NAMES.isdisjoint({path.name for path in output.rglob("*")})
+        )
         self.assertFalse(any(path.suffix.lower() in AUDIO_EXTENSIONS for path in (output / "enroll").rglob("*")))
+        self.assertFalse(any(
+            path.suffix.lower() in AUDIO_EXTENSIONS for path in output.rglob("*")
+            if not path.is_relative_to(output / "gate1")
+        ))
 
-    def test_staged_root_bytes_match_manifest_after_fixed_commit_render(self):
+    def test_staged_root_carries_one_track_deploy_identity(self):
         output = self.stage()
-        manifest = json.loads(MANIFEST_PATH.read_text(encoding="utf-8"))
-        for entry in manifest["files"]:
-            staged = (output / entry["destination"]).read_bytes()
-            self.assertEqual(hashlib.sha256(staged).hexdigest(), entry["sha256"])
-            self.assertNotIn(b"__BUILD_COMMIT__", staged)
-        self.assertIn(ACCEPTED_GATE1_COMMIT, (output / "index.html").read_text(encoding="utf-8"))
-        self.assertNotIn(DEPLOY_COMMIT, (output / "index.html").read_text(encoding="utf-8"))
+        for relative in ROOT_FILES:
+            staged = (output / relative).read_bytes()
+            self.assertNotIn(b"__BUILD_SHA__", staged, relative)
+        html = (output / "index.html").read_text(encoding="utf-8")
+        self.assertIn(f'<meta name="one-track-build" content="{DEPLOY_COMMIT}">', html)
+        for relative in sorted(path for path in ROOT_FILES if path.endswith(".mjs")):
+            source = (output / relative).read_text(encoding="utf-8")
+            self.assertEqual(source.count(DEPLOY_COMMIT), 1, relative)
+
+    def test_staged_one_track_modules_fail_closed_under_node_evaluation(self):
+        output = self.stage()
+        node_source = f"""
+          const identity = await import({json.dumps((output / 'src' / 'build-identity.mjs').as_uri())});
+          const config = await import({json.dumps((output / 'src' / 'config.mjs').as_uri())});
+          config.assertLocalBuildIdentity();
+          identity.assertLocalBuildIdentity();
+        """
+        completed = subprocess.run(
+            ["node", "--input-type=module", "--eval", node_source],
+            cwd=REPO_ROOT,
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+
+    def test_tampered_one_track_identity_rejects_during_node_evaluation(self):
+        output = self.stage()
+        target = output / "src" / "config.mjs"
+        source = target.read_text(encoding="utf-8")
+        self.assertEqual(source.count(DEPLOY_COMMIT), 1)
+        target.write_text(source.replace(DEPLOY_COMMIT, OTHER_COMMIT), encoding="utf-8")
+        node_source = f"""
+          const config = await import({json.dumps((output / 'src' / 'config.mjs').as_uri())});
+          config.assertLocalBuildIdentity();
+        """
+        completed = subprocess.run(
+            ["node", "--input-type=module", "--eval", node_source],
+            cwd=REPO_ROOT,
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        self.assertNotEqual(completed.returncode, 0)
+        self.assertIn("mixed build identity", completed.stderr)
 
     def test_every_enrollment_executable_and_html_carry_deploy_identity(self):
         output = self.stage()
@@ -208,8 +281,8 @@ class StagePagesTests(unittest.TestCase):
 
     def test_manifest_rejects_unknown_missing_duplicate_traversal_and_bad_hash(self):
         def swap_non_rendered_destinations(value):
-            metadata = next(entry for entry in value["files"] if entry["destination"] == "asset-metadata.json")
-            calibration = next(entry for entry in value["files"] if entry["destination"] == "calibration.json")
+            metadata = next(entry for entry in value["files"] if entry["destination"] == "gate1/asset-metadata.json")
+            calibration = next(entry for entry in value["files"] if entry["destination"] == "gate1/calibration.json")
             metadata["destination"], calibration["destination"] = (
                 calibration["destination"], metadata["destination"],
             )

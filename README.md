@@ -39,7 +39,23 @@ SITE_PARENT=$(mktemp -d)
 /usr/local/bin/python3.13 -m http.server 8000 --bind 127.0.0.1 --directory "$SITE_PARENT/site"
 ```
 
-Open one exact run URL, such as <http://127.0.0.1:8000/?run=session-1>. The other accepted values are `session-2` through `session-5`, `smoke-crossfade`, and `smoke-playing`. Missing or malformed run values fail closed before track selection.
+The public Milestone 2 one-track product is the site root <https://tonyisup.github.io/bpm-music-match/> after the root-staging change deploys. Open one exact run URL, such as <https://tonyisup.github.io/bpm-music-match/?run=session-1>. The other accepted values are `session-2` through `session-5`, `smoke-crossfade`, and `smoke-playing`. Missing or malformed run values fail closed before track selection. The staged root carries the deploying main-branch commit in `src/build-identity.mjs`, every executable module, and the HTML meta tag; a placeholder, malformed SHA, or mixed identity fails closed before file selection or audio setup.
+
+For local development, stage and serve the same immutable surface:
+
+```bash
+SITE=$(mktemp -d)/site
+python3 scripts/stage_pages.py "$(git rev-parse HEAD)" "$SITE"
+python3 -m http.server 8000 --bind 127.0.0.1 --directory "$SITE"
+```
+
+Then open one exact local run URL, such as <http://127.0.0.1:8000/?run=session-1>.
+
+The local-only stager `scripts/stage_one_track_local.py` remains available for isolated product QA without enrollment or Gate 1 files.
+
+## Frozen Gate 1 archive
+
+The frozen Gate 1 spike remains byte-identical to accepted commit `11df30f6f6cf90940bee425847614abaf26cc6f1`. It stages under the public `/gate1/` prefix, so the historical Gate 1 URL is now <https://tonyisup.github.io/bpm-music-match/gate1/>. Its manifest hashes are still verified on every deployment even though it is no longer the active root. Before any Gate 1 Android trial, expand **Diagnostics** at **Ready** and confirm that accepted identity.
 
 Expected verifier shape:
 
@@ -97,7 +113,7 @@ test -n "$RUN_ID"
 gh run watch "$RUN_ID" --exit-status
 ```
 
-The public Gate 1 URL is <https://tonyisup.github.io/bpm-music-match/>. It remains frozen to accepted Gate 1 commit `11df30f6f6cf90940bee425847614abaf26cc6f1`, even when a later deployment commit publishes it. Before every Gate 1 Android trial, expand **Diagnostics** at **Ready** and confirm that accepted identity.
+The public Gate 1 URL is <https://tonyisup.github.io/bpm-music-match/gate1/>. It remains frozen to accepted Gate 1 commit `11df30f6f6cf90940bee425847614abaf26cc6f1`, even when a later deployment commit publishes it. Before every Gate 1 Android trial, expand **Diagnostics** at **Ready** and confirm that accepted identity.
 
 The public enrollment bootstrap URL is <https://tonyisup.github.io/bpm-music-match/enroll/>. The candidate MP3 remains private and local; the URL itself is publicly reachable. Its HTML and every executed enrollment module identify the deploying main-branch commit and reject mixed cached builds. Enrollment is complete for `m2-island-party-v1`; rerun it only if the fixture or experiment identity changes, and always follow the [Private enrollment runbook](tools/m2-enrollment/README.md).
 
